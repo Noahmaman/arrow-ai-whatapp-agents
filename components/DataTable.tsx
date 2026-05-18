@@ -1,7 +1,7 @@
 'use client'
 
 import { useCallback, useEffect, useRef, useState } from 'react'
-import type { SheetRow } from '@/app/page'
+import type { SheetRow } from '@/lib/types'
 
 type Props = {
   onLoaded: (headers: string[], rows: SheetRow[], phoneColumn: string) => void
@@ -14,6 +14,83 @@ function makeEmpty(cols: string[], numRows: number): string[][] {
   return Array.from({ length: numRows }, () => Array(cols.length).fill(''))
 }
 
+function parseClipboardTable(text: string): string[][] {
+  const rows: string[][] = []
+  let row: string[] = []
+  let cell = ''
+  let inQuotes = false
+
+  for (let i = 0; i < text.length; i++) {
+    const char = text[i]
+    const next = text[i + 1]
+
+    if (char === '"') {
+      if (inQuotes && next === '"') {
+        cell += '"'
+        i++
+      } else {
+        inQuotes = !inQuotes
+      }
+      continue
+    }
+
+    if (!inQuotes && char === '\t') {
+      row.push(cell)
+      cell = ''
+      continue
+    }
+
+    if (!inQuotes && (char === '\n' || char === '\r')) {
+      if (char === '\r' && next === '\n') i++
+      row.push(cell)
+      rows.push(row)
+      row = []
+      cell = ''
+      continue
+    }
+
+    cell += char
+  }
+
+  row.push(cell)
+  rows.push(row)
+
+  return rows
+    .map((r) => r.map((c) => c.trim()))
+    .filter((r) => r.some((c) => c.length > 0))
+}
+
+function isPhoneLike(value: string) {
+  return value.replace(/\D/g, '').length >= 7
+}
+
+function looksLikeHeaderRow(firstRow: string[], secondRow?: string[]) {
+  const joined = firstRow.join(' ').toLowerCase()
+  if (/\b(name|nom|first|last|phone|mobile|tel|whatsapp|email|company|societe|société)\b/.test(joined)) {
+    return true
+  }
+  if (!secondRow) return false
+
+  const firstHasPhone = firstRow.some(isPhoneLike)
+  const secondHasPhone = secondRow.some(isPhoneLike)
+  return secondHasPhone && !firstHasPhone
+}
+
+function normaliseHeaders(rawHeaders: string[], colCount: number) {
+  const used = new Set<string>()
+  return Array.from({ length: colCount }, (_, i) => {
+    const base = rawHeaders[i]?.trim() || `Col ${i + 1}`
+    let label = base
+    let suffix = 2
+    while (used.has(label)) {
+      label = `${base} ${suffix}`
+      suffix++
+    }
+    used.add(label)
+    return label
+  })
+}
+
 export default function DataTable({ onLoaded }: Props) {
   const [headers, setHeaders] = useState<string[]>(DEFAULT_COLS)
   const [rows, setRows] = useState<string[][]>(makeEmpty(DEFAULT_COLS, EMPTY_ROWS))
@@ -22,45 +99,36 @@ export default function DataTable({ onLoaded }: Props) {
   const tableRef = useRef<HTMLDivElement>(null)
   const [focusedCell, setFocusedCell] = useState<[number, number] | null>(null)
 
-  // ── Paste handler ──────────────────────────────────────────────────────────
   const handlePaste = useCallback((e: ClipboardEvent) => {
     const text = e.clipboardData?.getData('text')
     if (!text) return
     e.preventDefault()
 
-    const parsed = text
-      .split('\n')
-      .map((r) => r.replace(/\r$/, '').split('\t'))
-      .filter((r) => r.some((c) => c.trim()))
-
+    const parsed = parseClipboardTable(text)
     if (parsed.length === 0) return
 
-    // If first row looks like headers (non-numeric), use as headers
     const firstRow = parsed[0]
-    const looksLikeHeader = firstRow.every((c) => isNaN(Number(c)) || c.trim() === '')
+    const hasHeaders = looksLikeHeaderRow(firstRow, parsed[1])
+    const dataRows = hasHeaders ? parsed.slice(1) : parsed
+    const colCount = Math.max(
+      hasHeaders ? firstRow.length : headers.length,
+      ...dataRows.map((r) => r.length),
+      DEFAULT_COLS.length
+    )
 
-    let newHeaders = headers
-    let dataRows = parsed
+    const nextHeaders = hasHeaders
+      ? normaliseHeaders(firstRow, colCount)
+      : normaliseHeaders(headers, colCount)
 
-    if (looksLikeHeader && parsed.length > 1) {
-      newHeaders = firstRow.map((h) => h.trim() || `Col${firstRow.indexOf(h) + 1}`)
-      dataRows = parsed.slice(1)
-    }
-
-    // Pad or trim columns
-    const colCount = Math.max(newHeaders.length, ...dataRows.map((r) => r.length))
-    const paddedHeaders = [...newHeaders, ...Array(Math.max(0, colCount - newHeaders.length)).fill('')].slice(0, colCount)
     const paddedRows = dataRows.map((r) => [...r, ...Array(Math.max(0, colCount - r.length)).fill('')].slice(0, colCount))
-
-    // Ensure at least EMPTY_ROWS
     while (paddedRows.length < EMPTY_ROWS) paddedRows.push(Array(colCount).fill(''))
 
-    setHeaders(paddedHeaders)
+    setHeaders(nextHeaders)
     setRows(paddedRows)
 
-    // Auto-detect phone column
-    const phoneIdx = paddedHeaders.findIndex((h) => /phone|mobile|tel|whatsapp/i.test(h))
-    setPhoneCol(phoneIdx >= 0 ? phoneIdx : 0)
+    const headerPhoneIdx = nextHeaders.findIndex((h) => /phone|mobile|tel|whatsapp|número|numero/i.test(h))
+    const dataPhoneIdx = paddedRows[0]?.findIndex(isPhoneLike) ?? -1
+    setPhoneCol(headerPhoneIdx >= 0 ? headerPhoneIdx : dataPhoneIdx >= 0 ? dataPhoneIdx : 0)
   }, [headers])
 
   useEffect(() => {
@@ -144,7 +212,7 @@ export default function DataTable({ onLoaded }: Props) {
           <svg className="w-4 h-4 flex-shrink-0 text-slate-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2" />
           </svg>
-          Click anywhere on the table below, then press <kbd className="mx-1 px-1.5 py-0.5 bg-white border border-slate-300 rounded text-xs font-mono">⌘V</kbd> to paste from Google Sheets or Excel
+          Click the table, then paste copied cells from Google Sheets or Excel. Headers are detected automatically, and pasted columns stay aligned.
         </div>
 
         {/* Table */}

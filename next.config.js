@@ -1,6 +1,11 @@
 /** @type {import('next').NextConfig} */
 const nextConfig = {
-  serverExternalPackages: ['whatsapp-web.js', 'puppeteer', 'puppeteer-core', 'fluent-ffmpeg'],
+  experimental: {
+    // Allow larger request bodies (for saving campaigns with many contacts)
+    serverActions: {
+      bodySizeLimit: '10mb',
+    },
+  },
 }
 
 module.exports = nextConfig

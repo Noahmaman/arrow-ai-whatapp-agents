@@ -1,23 +1,43 @@
-const express = require('express')
-const cors = require('cors')
-const QRCode = require('qrcode')
-const { Client, LocalAuth } = require('whatsapp-web.js')
+import cors from 'cors'
+import express from 'express'
+import QRCode from 'qrcode'
+import { Client, LocalAuth } from 'whatsapp-web.js'
 
 const app = express()
-app.use(express.json())
-app.use(cors({
-  origin: process.env.ALLOWED_ORIGIN || '*',
-}))
+const port = Number(process.env.PORT || 4000)
 
-// ── State ────────────────────────────────────────────────────────────────────
-let waClient = null
-let waStatus = 'idle' // idle | loading | qr | authenticated | ready | disconnected
-let waQR = null
+app.use(cors())
+app.use(express.json({ limit: '10mb' }))
 
-// ── WhatsApp client ──────────────────────────────────────────────────────────
-function createClient() {
-  const client = new Client({
-    authStrategy: new LocalAuth({ dataPath: '/data/wa-session' }),
+let client
+let status = 'idle'
+let qr
+
+function getState() {
+  return { status, qr }
+}
+
+async function destroyClient() {
+  if (!client) return
+  try {
+    await client.destroy()
+  } catch {
+    // Ignore cleanup failures; the next init will create a fresh session.
+  }
+  client = undefined
+}
+
+async function initClient() {
+  if (status === 'loading' || status === 'qr' || status === 'authenticated' || status === 'ready') {
+    return
+  }
+
+  await destroyClient()
+  status = 'loading'
+  qr = undefined
+
+  client = new Client({
+    authStrategy: new LocalAuth({ dataPath: './.wa-session' }),
     puppeteer: {
       headless: true,
       args: [
@@ -31,90 +51,112 @@ function createClient() {
     },
   })
 
-  client.on('qr', (qr) => {
-    waQR = qr
-    waStatus = 'qr'
-    console.log('[WA] QR received')
+  client.on('qr', (nextQr) => {
+    qr = nextQr
+    status = 'qr'
   })
 
   client.on('authenticated', () => {
-    waStatus = 'authenticated'
-    waQR = null
-    console.log('[WA] Authenticated')
+    qr = undefined
+    status = 'authenticated'
   })
 
   client.on('ready', () => {
-    waStatus = 'ready'
-    waQR = null
-    console.log('[WA] Ready')
+    qr = undefined
+    status = 'ready'
   })
 
-  client.on('disconnected', (reason) => {
-    waStatus = 'disconnected'
-    waQR = null
-    waClient = null
-    console.log('[WA] Disconnected:', reason)
+  client.on('disconnected', () => {
+    client = undefined
+    qr = undefined
+    status = 'disconnected'
   })
 
-  client.initialize().catch((err) => {
-    console.error('[WA] Init error:', err.message)
-    waStatus = 'disconnected'
+  client.initialize().catch((error) => {
+    console.error('[WA] init error', error)
+    client = undefined
+    qr = undefined
+    status = 'disconnected'
   })
-
-  return client
 }
 
-// ── Routes ───────────────────────────────────────────────────────────────────
-app.get('/status', async (req, res) => {
-  let qrImage
-  if (waQR) {
-    qrImage = await QRCode.toDataURL(waQR, { width: 280, margin: 2 })
-  }
-  res.json({ status: waStatus, qrImage })
+app.get('/health', (_req, res) => {
+  res.json({ ok: true, status })
 })
 
-app.post('/init', (req, res) => {
-  if (waStatus === 'loading' || waStatus === 'qr' || waStatus === 'ready') {
-    return res.json({ ok: true, status: waStatus })
-  }
-  if (waClient) {
-    try { waClient.destroy() } catch {}
-    waClient = null
-  }
-  waStatus = 'loading'
-  waQR = null
-  waClient = createClient()
+app.post('/init', async (_req, res) => {
+  await initClient()
   res.json({ ok: true })
 })
 
-app.delete('/init', async (req, res) => {
-  if (waClient) {
-    try { await waClient.destroy() } catch {}
-    waClient = null
-  }
-  waStatus = 'idle'
-  waQR = null
+app.post('/disconnect', async (_req, res) => {
+  await destroyClient()
+  status = 'idle'
+  qr = undefined
   res.json({ ok: true })
+})
+
+app.get('/status', async (_req, res) => {
+  const state = getState()
+  const qrImage = state.qr ? await QRCode.toDataURL(state.qr, { width: 280, margin: 2 }) : undefined
+  res.json({ status: state.status, qrImage })
+})
+
+app.post('/validate', async (req, res) => {
+  if (status !== 'ready' || !client) {
+    res.status(503).json({ error: 'WhatsApp is not connected.' })
+    return
+  }
+
+  const phones = Array.isArray(req.body?.phones) ? req.body.phones : []
+  const results = []
+
+  for (const rawPhone of phones) {
+    const phone = String(rawPhone ?? '')
+    const digits = phone.replace(/\D/g, '')
+
+    if (!digits) {
+      results.push({ phone, exists: false })
+      continue
+    }
+
+    try {
+      const lookup = await client.getNumberId(`${digits}@c.us`)
+      results.push({
+        phone,
+        exists: Boolean(lookup?._serialized),
+        chatId: lookup?._serialized,
+      })
+    } catch {
+      results.push({ phone, exists: false })
+    }
+  }
+
+  res.json({ success: true, results })
 })
 
 app.post('/send', async (req, res) => {
-  const { phone, message } = req.body
-  if (!phone || !message) return res.status(400).json({ error: 'phone and message required' })
-  if (waStatus !== 'ready' || !waClient) {
-    return res.status(503).json({ error: 'WhatsApp not connected' })
+  if (status !== 'ready' || !client) {
+    res.status(503).json({ error: 'WhatsApp is not connected.' })
+    return
   }
+
+  const digits = String(req.body?.phone ?? '').replace(/\D/g, '')
+  const message = String(req.body?.message ?? '')
+
+  if (!digits || !message.trim()) {
+    res.status(400).json({ error: 'Phone and message are required.' })
+    return
+  }
+
   try {
-    const digits = phone.replace(/\D/g, '')
-    const chatId = digits.includes('@') ? digits : `${digits}@c.us`
-    const result = await waClient.sendMessage(chatId, message)
-    res.json({ ok: true, messageId: result.id._serialized })
-  } catch (err) {
-    res.status(500).json({ error: err.message })
+    const result = await client.sendMessage(`${digits}@c.us`, message)
+    res.json({ success: true, messageId: result.id.id })
+  } catch (error) {
+    res.status(500).json({ error: error instanceof Error ? error.message : 'Unable to send message' })
   }
 })
 
-app.get('/health', (req, res) => res.json({ ok: true }))
-
-// ── Start ────────────────────────────────────────────────────────────────────
-const PORT = process.env.PORT || 3001
-app.listen(PORT, () => console.log(`WhatsApp service listening on port ${PORT}`))
+app.listen(port, () => {
+  console.log(`WhatsApp service listening on ${port}`)
+})

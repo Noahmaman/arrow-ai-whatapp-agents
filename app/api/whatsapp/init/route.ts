@@ -1,22 +1,23 @@
 import { NextResponse } from 'next/server'
-import { isExternal, proxyPost, proxyDelete } from '@/lib/wa-proxy'
+import { initWAClient, disconnectWA } from '@/lib/whatsapp-client'
+import { callWhatsAppService, hasRemoteWhatsAppService, isVercelRuntime, vercelWhatsAppUnavailable } from '@/lib/whatsapp-service'
 
 export async function POST() {
-  if (isExternal()) {
-    const data = await proxyPost('/init')
-    return NextResponse.json(data)
+  if (hasRemoteWhatsAppService()) {
+    return callWhatsAppService('/init', { method: 'POST' })
   }
-  const { initWAClient } = await import('@/lib/whatsapp-client')
+  if (isVercelRuntime()) return vercelWhatsAppUnavailable()
+
   await initWAClient()
   return NextResponse.json({ ok: true })
 }
 
 export async function DELETE() {
-  if (isExternal()) {
-    const data = await proxyDelete('/init')
-    return NextResponse.json(data)
+  if (hasRemoteWhatsAppService()) {
+    return callWhatsAppService('/disconnect', { method: 'POST' })
   }
-  const { disconnectWA } = await import('@/lib/whatsapp-client')
+  if (isVercelRuntime()) return vercelWhatsAppUnavailable()
+
   await disconnectWA()
   return NextResponse.json({ ok: true })
 }

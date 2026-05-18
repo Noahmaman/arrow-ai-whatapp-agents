@@ -2,7 +2,7 @@ import fs from 'fs'
 import path from 'path'
 import crypto from 'crypto'
 
-const CAMPAIGNS_DIR = path.join(process.cwd(), '.campaigns')
+const CAMPAIGNS_DIR = path.join(process.env.VERCEL ? '/tmp' : process.cwd(), '.campaigns')
 
 export type CampaignContact = {
   name: string

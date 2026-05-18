@@ -2,12 +2,18 @@ import { NextRequest, NextResponse } from 'next/server'
 import { getWAClient, getWAState } from '@/lib/whatsapp-client'
 import { callWhatsAppService, hasRemoteWhatsAppService, isVercelRuntime, vercelWhatsAppUnavailable } from '@/lib/whatsapp-service'
 
+type ValidationResult = {
+  phone: string
+  exists: boolean
+  chatId?: string
+}
+
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json()
 
     if (hasRemoteWhatsAppService()) {
-      return callWhatsAppService('/send', {
+      return callWhatsAppService('/validate', {
         method: 'POST',
         body: JSON.stringify(body),
       })
@@ -27,15 +33,32 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'Client unavailable' }, { status: 503 })
     }
 
-    const { phone, message } = body
+    const phones = Array.isArray(body?.phones) ? body.phones : []
 
-    // Normalise: strip non-digits then append @c.us
-    const digits = String(phone).replace(/\D/g, '')
-    const chatId = `${digits}@c.us`
+    const results: ValidationResult[] = []
 
-    const result = await client.sendMessage(chatId, message)
+    for (const rawPhone of phones) {
+      const phone = String(rawPhone ?? '')
+      const digits = phone.replace(/\D/g, '')
 
-    return NextResponse.json({ success: true, messageId: result.id.id })
+      if (!digits) {
+        results.push({ phone, exists: false })
+        continue
+      }
+
+      try {
+        const lookup = await client.getNumberId(`${digits}@c.us`)
+        results.push({
+          phone,
+          exists: Boolean(lookup?._serialized),
+          chatId: lookup?._serialized,
+        })
+      } catch {
+        results.push({ phone, exists: false })
+      }
+    }
+
+    return NextResponse.json({ success: true, results })
   } catch (error: unknown) {
     const msg = error instanceof Error ? error.message : 'Unknown error'
     return NextResponse.json({ error: msg }, { status: 500 })

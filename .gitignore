@@ -1,23 +1,11 @@
-# dependencies
-node_modules/
-
-# Next.js
-.next/
-out/
-
-# env
-.env.local
+node_modules
+.next
 .env*.local
-
-# WhatsApp session (contains auth tokens)
-.wa-session/
-
-# Campaign data (local only)
-.campaigns/
-
-# OS
+.env.local
+.campaigns
+.wa-session
+.wwebjs_cache
 .DS_Store
-
-# Logs
-*.log
 npm-debug.log*
+yarn-debug.log*
+yarn-error.log*

@@ -1,7 +1,7 @@
 'use client'
 
 import { useRef, useState } from 'react'
-import type { SheetRow } from '@/app/page'
+import type { SheetRow } from '@/lib/types'
 
 export type TemplateOutput = {
   mode: 'manual' | 'ai'

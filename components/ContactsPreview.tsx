@@ -1,7 +1,9 @@
 'use client'
 
-import { useState } from 'react'
-import type { SheetRow, SendResult } from '@/app/page'
+import { useState, useEffect } from 'react'
+import type { SheetRow, SendResult } from '@/lib/types'
+
+type ValidationState = 'unknown' | 'checking' | 'valid' | 'invalid'
 
 type Props = {
   rows: SheetRow[]
@@ -16,14 +18,39 @@ function renderMessage(template: string, row: SheetRow): string {
   return Object.entries(row).reduce((msg, [k, v]) => msg.replaceAll(`{{${k}}}`, v), template)
 }
 
+function getValidationPill(state: ValidationState) {
+  if (state === 'valid') {
+    return <span className="inline-flex px-2 py-1 rounded-full bg-green-50 text-green-700 border border-green-200 text-[11px] font-medium">On WhatsApp</span>
+  }
+  if (state === 'invalid') {
+    return <span className="inline-flex px-2 py-1 rounded-full bg-red-50 text-red-600 border border-red-200 text-[11px] font-medium">Not found</span>
+  }
+  if (state === 'checking') {
+    return <span className="inline-flex px-2 py-1 rounded-full bg-amber-50 text-amber-700 border border-amber-200 text-[11px] font-medium">Checking...</span>
+  }
+  return <span className="inline-flex px-2 py-1 rounded-full bg-slate-100 text-slate-500 border border-slate-200 text-[11px] font-medium">Not checked</span>
+}
+
 export default function ContactsPreview({ rows, phoneColumn, template, perContactMessages, onSend, onBack }: Props) {
   const [selected, setSelected] = useState<Set<number>>(new Set(rows.map((_, i) => i)))
   const [activeIdx, setActiveIdx] = useState<number | null>(null)
+  const [checkingNumbers, setCheckingNumbers] = useState(false)
+  const [validationError, setValidationError] = useState('')
+  const [validationMap, setValidationMap] = useState<Record<number, ValidationState>>(
+    Object.fromEntries(rows.map((_, i) => [i, 'unknown' satisfies ValidationState]))
+  )
+
+  // Auto-check numbers as soon as the step loads
+  useEffect(() => {
+    if (rows.length > 0) handleCheckNumbers()
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
 
   const getMessage = (row: SheetRow, i: number) =>
     perContactMessages ? (perContactMessages[i] ?? '') : renderMessage(template ?? '', row)
 
   const toggleAll = () => setSelected(selected.size === rows.length ? new Set() : new Set(rows.map((_, i) => i)))
+
   const toggle = (i: number) => {
     const next = new Set(selected)
     next.has(i) ? next.delete(i) : next.add(i)
@@ -40,77 +67,177 @@ export default function ContactsPreview({ rows, phoneColumn, template, perContac
     onSend(prepared)
   }
 
+  const handleCheckNumbers = async () => {
+    setCheckingNumbers(true)
+    setValidationError('')
+    setValidationMap(Object.fromEntries(rows.map((_, i) => [i, 'checking' satisfies ValidationState])))
+
+    try {
+      const res = await fetch('/api/whatsapp/validate', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ phones: rows.map((row) => row[phoneColumn] || '') }),
+      })
+
+      const json = await res.json()
+      if (!res.ok) {
+        throw new Error(json.error || 'Unable to validate numbers')
+      }
+
+      const nextMap: Record<number, ValidationState> = {}
+      const nextSelected = new Set<number>()
+
+      rows.forEach((_, i) => {
+        const exists = Boolean(json.results?.[i]?.exists)
+        nextMap[i] = exists ? 'valid' : 'invalid'
+        if (exists) nextSelected.add(i)
+      })
+
+      setValidationMap(nextMap)
+      setSelected(nextSelected)
+    } catch (error: unknown) {
+      const message = error instanceof Error ? error.message : 'Unable to validate numbers'
+      setValidationError(message)
+      setValidationMap(Object.fromEntries(rows.map((_, i) => [i, 'unknown' satisfies ValidationState])))
+    } finally {
+      setCheckingNumbers(false)
+    }
+  }
+
+  const validCount = Object.values(validationMap).filter((state) => state === 'valid').length
+  const invalidCount = Object.values(validationMap).filter((state) => state === 'invalid').length
+
   return (
-    <div className="max-w-3xl mx-auto">
+    <div className="max-w-6xl mx-auto">
       <div className="bg-white rounded-2xl shadow-sm border border-slate-200 p-8">
-        <div className="flex items-start justify-between mb-6">
+        <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between mb-6">
           <div>
-            <h2 className="text-xl font-semibold text-slate-800">Preview & select recipients</h2>
+            <h2 className="text-xl font-semibold text-slate-800">Check numbers before sending</h2>
             <p className="text-slate-500 text-sm mt-1">
-              {selected.size} of {rows.length} contacts selected
-              {perContactMessages && <span className="ml-2 text-xs bg-slate-100 px-2 py-0.5 rounded-full text-slate-500">AI-personalised</span>}
+              Review the sheet like a mini Excel table, verify WhatsApp availability, then select the rows you want.
             </p>
+            <div className="flex flex-wrap gap-2 mt-3 text-xs">
+              <span className="px-3 py-1 rounded-full bg-slate-100 text-slate-600 border border-slate-200">
+                {selected.size} selected
+              </span>
+              <span className="px-3 py-1 rounded-full bg-green-50 text-green-700 border border-green-200">
+                {validCount} valid
+              </span>
+              <span className="px-3 py-1 rounded-full bg-red-50 text-red-600 border border-red-200">
+                {invalidCount} invalid
+              </span>
+              {perContactMessages && (
+                <span className="px-3 py-1 rounded-full bg-slate-100 text-slate-600 border border-slate-200">
+                  AI-personalised
+                </span>
+              )}
+            </div>
+            {validationError && <p className="text-xs text-red-600 mt-3">{validationError}</p>}
           </div>
-          <button onClick={toggleAll} className="text-xs text-whatsapp-teal font-medium hover:underline">
-            {selected.size === rows.length ? 'Deselect all' : 'Select all'}
-          </button>
+
+          <div className="flex flex-wrap gap-2">
+            <button
+              onClick={handleCheckNumbers}
+              disabled={checkingNumbers || rows.length === 0}
+              className="px-4 py-2 rounded-xl border border-whatsapp-green/30 text-whatsapp-teal text-sm font-medium hover:bg-whatsapp-light/40 transition disabled:opacity-50"
+            >
+              {checkingNumbers ? 'Checking WhatsApp...' : 'Check numbers on WhatsApp'}
+            </button>
+            <button
+              onClick={toggleAll}
+              className="px-4 py-2 rounded-xl border border-slate-200 text-slate-600 text-sm font-medium hover:bg-slate-50 transition"
+            >
+              {selected.size === rows.length ? 'Deselect all' : 'Select all'}
+            </button>
+          </div>
         </div>
 
-        <div className="space-y-2 max-h-[440px] overflow-y-auto scrollbar-thin pr-1">
-          {rows.map((row, i) => {
-            const phone = row[phoneColumn] || '—'
-            const message = getMessage(row, i)
-            const isSelected = selected.has(i)
-            const isActive = activeIdx === i
+        <div className="rounded-2xl border border-slate-200 overflow-hidden">
+          <div className="overflow-x-auto">
+            <table className="min-w-full text-sm">
+              <thead className="bg-slate-50 border-b border-slate-200">
+                <tr className="text-left text-slate-500">
+                  <th className="w-14 px-4 py-3 font-medium">Send</th>
+                  <th className="w-16 px-4 py-3 font-medium">#</th>
+                  <th className="px-4 py-3 font-medium">Name</th>
+                  <th className="px-4 py-3 font-medium">Phone</th>
+                  <th className="px-4 py-3 font-medium">WhatsApp</th>
+                  <th className="min-w-[380px] px-4 py-3 font-medium">Message preview</th>
+                </tr>
+              </thead>
+              <tbody>
+                {rows.map((row, i) => {
+                  const phone = row[phoneColumn] || '—'
+                  const message = getMessage(row, i)
+                  const isSelected = selected.has(i)
+                  const validation = validationMap[i] ?? 'unknown'
+                  const isExpanded = activeIdx === i
+                  const displayName = String(Object.values(row)[0] || `Row ${i + 1}`)
 
-            return (
-              <div key={i} className={`rounded-xl border transition cursor-pointer
-                ${isSelected ? 'border-whatsapp-green/50 bg-whatsapp-light/30' : 'border-slate-200 bg-slate-50 opacity-60'}`}>
-                <div className="flex items-center gap-3 px-4 py-3" onClick={() => toggle(i)}>
-                  <div className={`w-5 h-5 rounded flex-shrink-0 flex items-center justify-center border-2 transition
-                    ${isSelected ? 'bg-whatsapp-green border-whatsapp-green' : 'border-slate-300 bg-white'}`}>
-                    {isSelected && (
-                      <svg className="w-3 h-3 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M5 13l4 4L19 7" />
-                      </svg>
-                    )}
-                  </div>
-                  <div className="w-8 h-8 rounded-full bg-gradient-to-br from-whatsapp-dark to-whatsapp-teal flex items-center justify-center text-white text-xs font-bold flex-shrink-0">
-                    {(Object.values(row)[0] || '?').toString().charAt(0).toUpperCase()}
-                  </div>
-                  <div className="flex-1 min-w-0">
-                    <div className="flex items-center gap-2">
-                      <span className="text-sm font-medium text-slate-800 truncate">{Object.values(row)[0] || `Row ${i + 1}`}</span>
-                      <span className="text-xs text-slate-400 font-mono flex-shrink-0">{phone}</span>
-                    </div>
-                    <p className="text-xs text-slate-500 truncate mt-0.5">{message}</p>
-                  </div>
-                  <button onClick={(e) => { e.stopPropagation(); setActiveIdx(isActive ? null : i) }}
-                    className="flex-shrink-0 text-slate-400 hover:text-slate-600 transition">
-                    <svg className={`w-4 h-4 transition-transform ${isActive ? 'rotate-180' : ''}`} fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
-                    </svg>
-                  </button>
-                </div>
-                {isActive && (
-                  <div className="px-4 pb-4">
-                    <div className="bg-whatsapp-light rounded-xl rounded-tl-none px-3 py-2.5 text-sm text-slate-800 whitespace-pre-wrap border border-whatsapp-green/20 ml-16">
-                      {message}
-                    </div>
-                  </div>
-                )}
-              </div>
-            )
-          })}
+                  return (
+                    <tr
+                      key={i}
+                      className={`${i % 2 === 0 ? 'bg-white' : 'bg-slate-50/40'} border-b border-slate-100 align-top`}
+                    >
+                      <td className="px-4 py-3">
+                        <button
+                          onClick={() => toggle(i)}
+                          className={`w-5 h-5 rounded border-2 flex items-center justify-center transition ${
+                            isSelected ? 'bg-whatsapp-green border-whatsapp-green' : 'bg-white border-slate-300'
+                          }`}
+                          title={isSelected ? 'Unselect row' : 'Select row'}
+                        >
+                          {isSelected && (
+                            <svg className="w-3 h-3 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M5 13l4 4L19 7" />
+                            </svg>
+                          )}
+                        </button>
+                      </td>
+                      <td className="px-4 py-3 text-slate-400 font-mono">{i + 1}</td>
+                      <td className="px-4 py-3">
+                        <div className="font-medium text-slate-800">{displayName}</div>
+                      </td>
+                      <td className="px-4 py-3">
+                        <div className="font-mono text-xs text-slate-500">{phone}</div>
+                      </td>
+                      <td className="px-4 py-3">{getValidationPill(validation)}</td>
+                      <td className="px-4 py-3">
+                        <button
+                          onClick={() => setActiveIdx(isExpanded ? null : i)}
+                          className="w-full text-left"
+                        >
+                          <div className="text-slate-600 truncate">{message}</div>
+                          <div className="mt-1 text-xs text-whatsapp-teal font-medium">
+                            {isExpanded ? 'Hide full message' : 'Show full message'}
+                          </div>
+                        </button>
+                        {isExpanded && (
+                          <div className="mt-3 bg-whatsapp-light rounded-xl px-3 py-2.5 text-sm text-slate-800 whitespace-pre-wrap border border-whatsapp-green/20">
+                            {message}
+                          </div>
+                        )}
+                      </td>
+                    </tr>
+                  )
+                })}
+              </tbody>
+            </table>
+          </div>
         </div>
 
         <div className="mt-6 flex gap-3">
-          <button onClick={onBack} className="px-5 py-2.5 rounded-xl border border-slate-200 text-slate-600 text-sm font-medium hover:bg-slate-50 transition">Back</button>
-          <button onClick={handleSend} disabled={selected.size === 0}
-            className="flex-1 py-2.5 bg-whatsapp-green hover:bg-whatsapp-teal text-white rounded-xl font-medium text-sm transition disabled:opacity-50 flex items-center justify-center gap-2">
-            <svg viewBox="0 0 24 24" fill="currentColor" className="w-4 h-4">
-              <path d="M17.472 14.382c-.297-.149-1.758-.867-2.03-.967-.273-.099-.471-.148-.67.15-.197.297-.767.966-.94 1.164-.173.199-.347.223-.644.075-.297-.15-1.255-.463-2.39-1.475-.883-.788-1.48-1.761-1.653-2.059-.173-.297-.018-.458.13-.606.134-.133.298-.347.446-.52.149-.174.198-.298.298-.497.099-.198.05-.371-.025-.52-.075-.149-.669-1.612-.916-2.207-.242-.579-.487-.5-.669-.51-.173-.008-.371-.01-.57-.01-.198 0-.52.074-.792.372-.272.297-1.04 1.016-1.04 2.479 0 1.462 1.065 2.875 1.213 3.074.149.198 2.096 3.2 5.077 4.487.709.306 1.262.489 1.694.625.712.227 1.36.195 1.871.118.571-.085 1.758-.719 2.006-1.413.248-.694.248-1.289.173-1.413-.074-.124-.272-.198-.57-.347m-5.421 7.403h-.004a9.87 9.87 0 01-5.031-1.378l-.361-.214-3.741.982.998-3.648-.235-.374a9.86 9.86 0 01-1.51-5.26c.001-5.45 4.436-9.884 9.888-9.884 2.64 0 5.122 1.03 6.988 2.898a9.825 9.825 0 012.893 6.994c-.003 5.45-4.437 9.884-9.885 9.884m8.413-18.297A11.815 11.815 0 0012.05 0C5.495 0 .16 5.335.157 11.892c0 2.096.547 4.142 1.588 5.945L.057 24l6.305-1.654a11.882 11.882 0 005.683 1.448h.005c6.554 0 11.89-5.335 11.893-11.893a11.821 11.821 0 00-3.48-8.413z" />
-            </svg>
+          <button
+            onClick={onBack}
+            className="px-5 py-2.5 rounded-xl border border-slate-200 text-slate-600 text-sm font-medium hover:bg-slate-50 transition"
+          >
+            Back
+          </button>
+          <button
+            onClick={handleSend}
+            disabled={selected.size === 0}
+            className="flex-1 py-2.5 bg-whatsapp-green hover:bg-whatsapp-teal text-white rounded-xl font-medium text-sm transition disabled:opacity-50"
+          >
             Send to {selected.size} contact{selected.size !== 1 ? 's' : ''}
           </button>
         </div>

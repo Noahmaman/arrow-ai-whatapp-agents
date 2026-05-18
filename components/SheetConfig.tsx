@@ -1,7 +1,7 @@
 'use client'
 
 import { useState } from 'react'
-import type { SheetRow } from '@/app/page'
+import type { SheetRow } from '@/lib/types'
 
 type Props = {
   onLoaded: (headers: string[], rows: SheetRow[], phoneColumn: string) => void
