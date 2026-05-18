@@ -1,0 +1,83 @@
+# WhatsApp Sheet Automation
+
+Next.js app for building personalised WhatsApp campaigns from pasted Excel/Google Sheets rows.
+
+## Why Vercel Needs `WHATSAPP_SERVICE_URL`
+
+The Vercel app can host the UI, AI generation, Google Sheets loading, and API proxy routes.
+
+WhatsApp Web itself cannot run directly inside Vercel serverless functions because it needs:
+
+- a persistent Chromium browser process;
+- a QR-authenticated WhatsApp session that stays alive;
+- local session storage between requests.
+
+Vercel functions stop after requests, so the WhatsApp browser session is killed. For that reason the app expects a separate always-on service.
+
+## Deployment Setup
+
+### 1. Deploy the Next.js app on Vercel
+
+Use the repo root as the Vercel project.
+
+Add these environment variables in Vercel as needed:
+
+```bash
+ANTHROPIC_API_KEY=...
+GOOGLE_SERVICE_ACCOUNT_EMAIL=...
+GOOGLE_PRIVATE_KEY="-----BEGIN PRIVATE KEY-----\n...\n-----END PRIVATE KEY-----"
+WHATSAPP_SERVICE_URL=https://your-whatsapp-service.onrender.com
+```
+
+### 2. Deploy the WhatsApp service
+
+Deploy the `whatsapp-service/` folder on a persistent Node host such as Render, Railway, Fly.io, or a VPS.
+
+For Render:
+
+1. Create a new Web Service from this GitHub repo.
+2. Set the root directory to `whatsapp-service`.
+3. Build command:
+
+```bash
+npm install
+```
+
+4. Start command:
+
+```bash
+npm start
+```
+
+5. Copy the public URL and set it in Vercel:
+
+```bash
+WHATSAPP_SERVICE_URL=https://your-render-service.onrender.com
+```
+
+### 3. Connect WhatsApp
+
+Open `/connect` in the Vercel app, click connect, scan the QR code, then send campaigns.
+
+## Local Development
+
+Run the Next app:
+
+```bash
+npm install
+npm run dev
+```
+
+Run the WhatsApp service in another terminal:
+
+```bash
+cd whatsapp-service
+npm install
+npm start
+```
+
+Then set this in `.env.local`:
+
+```bash
+WHATSAPP_SERVICE_URL=http://localhost:4000
+```

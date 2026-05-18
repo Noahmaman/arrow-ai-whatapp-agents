@@ -15,7 +15,9 @@ export function vercelWhatsAppUnavailable() {
   return NextResponse.json(
     {
       error:
-        'WhatsApp Web cannot run directly inside Vercel serverless functions. Deploy a small persistent WhatsApp service and set WHATSAPP_SERVICE_URL in Vercel.',
+        'WhatsApp is not configured for Vercel yet. Deploy the whatsapp-service folder on Render/Railway/VPS, then add its public URL as WHATSAPP_SERVICE_URL in your Vercel environment variables.',
+      details:
+        'Vercel serverless functions stop after each request, but WhatsApp Web needs a persistent Chromium session to stay connected after the QR scan.',
     },
     { status: 501 }
   )

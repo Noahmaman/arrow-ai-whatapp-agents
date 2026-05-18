@@ -1,0 +1,9 @@
+services:
+  - type: web
+    name: arrow-whatsapp-service
+    env: node
+    rootDir: whatsapp-service
+    buildCommand: npm install
+    startCommand: npm start
+    plan: starter
+    autoDeploy: true
