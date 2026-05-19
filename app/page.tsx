@@ -8,7 +8,7 @@ import MessageTemplate, { type TemplateOutput } from '@/components/MessageTempla
 import SendProgress from '@/components/SendProgress'
 import SheetConfig from '@/components/SheetConfig'
 import StepIndicator from '@/components/StepIndicator'
-import type { SendResult, SheetRow } from '@/lib/types'
+import { DEFAULT_DELIVERY_SETTINGS, type DeliverySettings, type SendResult, type SheetRow } from '@/lib/types'
 
 const steps = ['Contacts', 'Message', 'Preview', 'Send']
 
@@ -22,6 +22,7 @@ export default function HomePage() {
   const [phoneColumn, setPhoneColumn] = useState('')
   const [templateOutput, setTemplateOutput] = useState<TemplateOutput | null>(null)
   const [sendResults, setSendResults] = useState<SendResult[]>([])
+  const [deliverySettings, setDeliverySettings] = useState<DeliverySettings>(DEFAULT_DELIVERY_SETTINGS)
 
   const handleContactsLoaded = (nextHeaders: string[], nextRows: SheetRow[], nextPhoneColumn: string) => {
     setHeaders(nextHeaders)
@@ -37,6 +38,7 @@ export default function HomePage() {
     setPhoneColumn('')
     setTemplateOutput(null)
     setSendResults([])
+    setDeliverySettings(DEFAULT_DELIVERY_SETTINGS)
   }
 
   return (
@@ -119,8 +121,9 @@ export default function HomePage() {
             template={templateOutput.template}
             perContactMessages={templateOutput.messages}
             onBack={() => setStep(1)}
-            onSend={(results) => {
+            onSend={(results, settings) => {
               setSendResults(results)
+              setDeliverySettings(settings)
               setStep(3)
             }}
           />
@@ -135,6 +138,7 @@ export default function HomePage() {
               aiPrompt: templateOutput.aiPrompt,
               demioLink: templateOutput.demioLink,
             }}
+            deliverySettings={deliverySettings}
             onReset={resetCampaign}
           />
         )}

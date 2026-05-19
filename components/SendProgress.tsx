@@ -1,23 +1,22 @@
 'use client'
 
 import { useEffect, useRef, useState } from 'react'
-import type { SendResult } from '@/lib/types'
+import { DEFAULT_DELIVERY_SETTINGS, type DeliverySettings, type SendResult } from '@/lib/types'
 
 type Props = {
   results: SendResult[]
   campaignMeta: { mode: 'manual' | 'ai'; template?: string; aiPrompt?: string; demioLink?: string }
+  deliverySettings?: DeliverySettings
   onReset: () => void
 }
 
 // Rows to show in the live feed (tail of processed contacts)
 const VISIBLE_ROWS = 40
-const MIN_SEND_DELAY_MS = 35_000
-const MAX_SEND_DELAY_MS = 90_000
-const COOLDOWN_AFTER_MESSAGES = 20
-const COOLDOWN_MS = 5 * 60_000
 
-function randomDelayMs() {
-  return Math.floor(Math.random() * (MAX_SEND_DELAY_MS - MIN_SEND_DELAY_MS + 1)) + MIN_SEND_DELAY_MS
+function randomDelayMs(settings: DeliverySettings) {
+  const min = Math.max(1, settings.minDelaySeconds) * 1000
+  const max = Math.max(min, settings.maxDelaySeconds * 1000)
+  return Math.floor(Math.random() * (max - min + 1)) + min
 }
 
 function formatDuration(ms: number) {
@@ -28,7 +27,7 @@ function formatDuration(ms: number) {
   return `${minutes}m ${rest.toString().padStart(2, '0')}s`
 }
 
-export default function SendProgress({ results: initial, campaignMeta, onReset }: Props) {
+export default function SendProgress({ results: initial, campaignMeta, deliverySettings = DEFAULT_DELIVERY_SETTINGS, onReset }: Props) {
   const total = initial.length
 
   // All results live in a ref — no re-render cost on every update
@@ -125,11 +124,12 @@ export default function SendProgress({ results: initial, campaignMeta, onReset }
 
         if (i < total - 1 && !cancelled && !stopRef.current) {
           const sentInCurrentRun = localSent + localFailed
-          const isCooldownTurn = sentInCurrentRun > 0 && sentInCurrentRun % COOLDOWN_AFTER_MESSAGES === 0
-          const delay = isCooldownTurn ? COOLDOWN_MS : randomDelayMs()
+          const cooldownAfter = Math.max(1, deliverySettings.cooldownAfterMessages)
+          const isCooldownTurn = sentInCurrentRun > 0 && sentInCurrentRun % cooldownAfter === 0
+          const delay = isCooldownTurn ? Math.max(1, deliverySettings.cooldownMinutes) * 60_000 : randomDelayMs(deliverySettings)
           setWaitLabel(
             isCooldownTurn
-              ? `Cooldown anti-ban: waiting ${formatDuration(delay)} before the next batch`
+              ? `Batch cooldown: waiting ${formatDuration(delay)} before the next send`
               : `Random safety delay: next send in ${formatDuration(delay)}`
           )
           await new Promise((r) => setTimeout(r, delay))

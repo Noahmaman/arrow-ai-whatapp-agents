@@ -8,3 +8,17 @@ export type SendResult = {
   error?: string
   messageId?: string
 }
+
+export type DeliverySettings = {
+  minDelaySeconds: number
+  maxDelaySeconds: number
+  cooldownAfterMessages: number
+  cooldownMinutes: number
+}
+
+export const DEFAULT_DELIVERY_SETTINGS: DeliverySettings = {
+  minDelaySeconds: 35,
+  maxDelaySeconds: 90,
+  cooldownAfterMessages: 20,
+  cooldownMinutes: 5,
+}

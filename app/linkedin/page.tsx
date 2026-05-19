@@ -3,6 +3,7 @@
 import { useEffect, useState } from 'react'
 import Link from 'next/link'
 import type { LinkedInProfile } from '@/lib/linkedin'
+import { DEFAULT_DELIVERY_SETTINGS } from '@/lib/types'
 
 type LinkedInStatus = {
   configured: boolean
@@ -130,6 +131,28 @@ export default function LinkedInPage() {
               )}
             </div>
           )}
+        </div>
+
+        <div className="mt-6 bg-white rounded-2xl border border-slate-200 shadow-sm p-6">
+          <h2 className="text-base font-semibold text-slate-800">LinkedIn pacing</h2>
+          <p className="text-sm text-slate-500 mt-1">
+            LinkedIn is connected through the official sign-in flow. Automated DM sending is not enabled here; use these
+            timing rules for manual LinkedIn outreach tasks and exports.
+          </p>
+          <div className="mt-4 grid grid-cols-2 gap-3 text-xs">
+            <div className="rounded-xl bg-slate-50 border border-slate-200 px-3 py-2">
+              <p className="font-medium text-slate-500">Random delay</p>
+              <p className="text-slate-800 mt-1">
+                {DEFAULT_DELIVERY_SETTINGS.minDelaySeconds}s - {DEFAULT_DELIVERY_SETTINGS.maxDelaySeconds}s
+              </p>
+            </div>
+            <div className="rounded-xl bg-slate-50 border border-slate-200 px-3 py-2">
+              <p className="font-medium text-slate-500">Batch cooldown</p>
+              <p className="text-slate-800 mt-1">
+                {DEFAULT_DELIVERY_SETTINGS.cooldownMinutes}m every {DEFAULT_DELIVERY_SETTINGS.cooldownAfterMessages}
+              </p>
+            </div>
+          </div>
         </div>
       </main>
     </div>

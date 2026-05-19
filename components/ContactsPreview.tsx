@@ -1,7 +1,7 @@
 'use client'
 
 import { useState, useEffect } from 'react'
-import type { SheetRow, SendResult } from '@/lib/types'
+import { DEFAULT_DELIVERY_SETTINGS, type DeliverySettings, type SheetRow, type SendResult } from '@/lib/types'
 
 type ValidationState = 'unknown' | 'checking' | 'valid' | 'invalid'
 
@@ -10,7 +10,7 @@ type Props = {
   phoneColumn: string
   template?: string
   perContactMessages?: string[]
-  onSend: (results: SendResult[]) => void
+  onSend: (results: SendResult[], settings: DeliverySettings) => void
   onBack: () => void
 }
 
@@ -34,6 +34,7 @@ function getValidationPill(state: ValidationState) {
 export default function ContactsPreview({ rows, phoneColumn, template, perContactMessages, onSend, onBack }: Props) {
   const [selected, setSelected] = useState<Set<number>>(new Set(rows.map((_, i) => i)))
   const [activeIdx, setActiveIdx] = useState<number | null>(null)
+  const [deliverySettings, setDeliverySettings] = useState<DeliverySettings>(DEFAULT_DELIVERY_SETTINGS)
   const [checkingNumbers, setCheckingNumbers] = useState(false)
   const [validationError, setValidationError] = useState('')
   const [validationMap, setValidationMap] = useState<Record<number, ValidationState>>(
@@ -64,7 +65,20 @@ export default function ContactsPreview({ rows, phoneColumn, template, perContac
       message: getMessage(rows[i], i),
       status: 'pending',
     }))
-    onSend(prepared)
+    onSend(prepared, deliverySettings)
+  }
+
+  const updateDeliverySetting = (key: keyof DeliverySettings, value: number) => {
+    setDeliverySettings((prev) => {
+      const next = { ...prev, [key]: value }
+      if (key === 'minDelaySeconds' && value > next.maxDelaySeconds) {
+        next.maxDelaySeconds = value
+      }
+      if (key === 'maxDelaySeconds' && value < next.minDelaySeconds) {
+        next.minDelaySeconds = value
+      }
+      return next
+    })
   }
 
   const handleCheckNumbers = async () => {
@@ -149,6 +163,77 @@ export default function ContactsPreview({ rows, phoneColumn, template, perContac
             >
               {selected.size === rows.length ? 'Deselect all' : 'Select all'}
             </button>
+          </div>
+        </div>
+
+        <div className="mb-6 rounded-2xl border border-amber-200 bg-amber-50 p-4">
+          <div className="flex flex-col gap-1 mb-4">
+            <h3 className="text-sm font-semibold text-amber-900">Random delivery pacing</h3>
+            <p className="text-xs text-amber-700">
+              Send timing will vary between each contact, with a longer cooldown after batches.
+            </p>
+          </div>
+
+          <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+            <label className="text-xs font-medium text-amber-900">
+              Min delay
+              <div className="mt-1 flex items-center gap-2">
+                <input
+                  type="number"
+                  min={5}
+                  max={600}
+                  value={deliverySettings.minDelaySeconds}
+                  onChange={(e) => updateDeliverySetting('minDelaySeconds', Number(e.target.value))}
+                  className="w-full rounded-lg border border-amber-200 bg-white px-3 py-2 text-sm text-slate-800 focus:outline-none focus:ring-2 focus:ring-amber-300"
+                />
+                <span className="text-amber-700">sec</span>
+              </div>
+            </label>
+
+            <label className="text-xs font-medium text-amber-900">
+              Max delay
+              <div className="mt-1 flex items-center gap-2">
+                <input
+                  type="number"
+                  min={5}
+                  max={900}
+                  value={deliverySettings.maxDelaySeconds}
+                  onChange={(e) => updateDeliverySetting('maxDelaySeconds', Number(e.target.value))}
+                  className="w-full rounded-lg border border-amber-200 bg-white px-3 py-2 text-sm text-slate-800 focus:outline-none focus:ring-2 focus:ring-amber-300"
+                />
+                <span className="text-amber-700">sec</span>
+              </div>
+            </label>
+
+            <label className="text-xs font-medium text-amber-900">
+              Cooldown after
+              <div className="mt-1 flex items-center gap-2">
+                <input
+                  type="number"
+                  min={1}
+                  max={200}
+                  value={deliverySettings.cooldownAfterMessages}
+                  onChange={(e) => updateDeliverySetting('cooldownAfterMessages', Number(e.target.value))}
+                  className="w-full rounded-lg border border-amber-200 bg-white px-3 py-2 text-sm text-slate-800 focus:outline-none focus:ring-2 focus:ring-amber-300"
+                />
+                <span className="text-amber-700">msgs</span>
+              </div>
+            </label>
+
+            <label className="text-xs font-medium text-amber-900">
+              Cooldown length
+              <div className="mt-1 flex items-center gap-2">
+                <input
+                  type="number"
+                  min={1}
+                  max={60}
+                  value={deliverySettings.cooldownMinutes}
+                  onChange={(e) => updateDeliverySetting('cooldownMinutes', Number(e.target.value))}
+                  className="w-full rounded-lg border border-amber-200 bg-white px-3 py-2 text-sm text-slate-800 focus:outline-none focus:ring-2 focus:ring-amber-300"
+                />
+                <span className="text-amber-700">min</span>
+              </div>
+            </label>
           </div>
         </div>
 
