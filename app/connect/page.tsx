@@ -4,7 +4,13 @@ import { useEffect, useRef, useState } from 'react'
 import Link from 'next/link'
 import type { WAStatus } from '@/lib/whatsapp-client'
 
-type PollData = { status: WAStatus; qrImage?: string }
+type PollData = {
+  status: WAStatus
+  qrImage?: string
+  error?: string
+  details?: string
+  configured?: boolean
+}
 
 const STATUS_LABEL: Record<WAStatus, string> = {
   idle: 'Not connected',
@@ -27,6 +33,7 @@ const STATUS_COLOR: Record<WAStatus, string> = {
 export default function ConnectPage() {
   const [data, setData] = useState<PollData>({ status: 'idle' })
   const [starting, setStarting] = useState(false)
+  const [actionError, setActionError] = useState('')
   const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null)
 
   const poll = async () => {
@@ -34,11 +41,14 @@ export default function ConnectPage() {
       const res = await fetch('/api/whatsapp/status')
       const json: PollData = await res.json()
       setData(json)
+      if (json.error) setActionError(json.details || json.error)
       // Stop polling once ready or disconnected (user can restart)
-      if (json.status === 'ready' || json.status === 'idle') {
+      if (json.status === 'ready' || json.status === 'idle' || json.configured === false) {
         if (intervalRef.current) clearInterval(intervalRef.current)
       }
-    } catch { /* ignore */ }
+    } catch {
+      setActionError('Unable to reach the WhatsApp status API.')
+    }
   }
 
   // Poll while the component is mounted if already in-flight
@@ -50,17 +60,36 @@ export default function ConnectPage() {
 
   const startConnect = async () => {
     setStarting(true)
-    await fetch('/api/whatsapp/init', { method: 'POST' })
-    // Restart polling
-    if (intervalRef.current) clearInterval(intervalRef.current)
-    intervalRef.current = setInterval(poll, 2000)
-    setStarting(false)
+    setActionError('')
+    try {
+      const res = await fetch('/api/whatsapp/init', { method: 'POST' })
+      const json = await res.json().catch(() => ({}))
+      if (!res.ok) {
+        throw new Error(json.details || json.error || 'Unable to start WhatsApp.')
+      }
+      if (intervalRef.current) clearInterval(intervalRef.current)
+      intervalRef.current = setInterval(poll, 2000)
+      await poll()
+    } catch (error) {
+      setActionError(error instanceof Error ? error.message : 'Unable to start WhatsApp.')
+    } finally {
+      setStarting(false)
+    }
   }
 
   const disconnect = async () => {
-    await fetch('/api/whatsapp/init', { method: 'DELETE' })
-    setData({ status: 'idle' })
-    if (intervalRef.current) clearInterval(intervalRef.current)
+    setActionError('')
+    try {
+      const res = await fetch('/api/whatsapp/init', { method: 'DELETE' })
+      const json = await res.json().catch(() => ({}))
+      if (!res.ok) {
+        throw new Error(json.details || json.error || 'Unable to disconnect WhatsApp.')
+      }
+      setData({ status: 'idle' })
+      if (intervalRef.current) clearInterval(intervalRef.current)
+    } catch (error) {
+      setActionError(error instanceof Error ? error.message : 'Unable to disconnect WhatsApp.')
+    }
   }
 
   const { status, qrImage } = data
@@ -102,6 +131,19 @@ export default function ConnectPage() {
             }`} />
             <span className={STATUS_COLOR[status]}>{STATUS_LABEL[status]}</span>
           </div>
+
+          {(actionError || data.error) && (
+            <div className="mb-6 rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-left">
+              <p className="text-sm font-medium text-red-700">{data.error || 'Connection error'}</p>
+              <p className="mt-1 text-xs text-red-600">{actionError || data.details}</p>
+              {data.configured === false && (
+                <p className="mt-2 text-xs text-red-600">
+                  Deploy <code className="rounded bg-red-100 px-1">whatsapp-service</code>, add its URL as{' '}
+                  <code className="rounded bg-red-100 px-1">WHATSAPP_SERVICE_URL</code> in Vercel, then redeploy.
+                </p>
+              )}
+            </div>
+          )}
 
           {/* QR Code */}
           {status === 'qr' && qrImage && (

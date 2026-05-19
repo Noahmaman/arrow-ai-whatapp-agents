@@ -44,4 +44,7 @@ export type RemoteStatusResponse = {
   status: WAStatus
   qr?: string
   qrImage?: string
+  error?: string
+  details?: string
+  configured?: boolean
 }
