@@ -1,7 +1,9 @@
 import cors from 'cors'
 import express from 'express'
 import QRCode from 'qrcode'
-import { Client, LocalAuth } from 'whatsapp-web.js'
+import whatsappWeb from 'whatsapp-web.js'
+
+const { Client, LocalAuth } = whatsappWeb
 
 const app = express()
 const port = Number(process.env.PORT || 4000)
