@@ -7,12 +7,14 @@ const g = global as typeof global & {
   __waClient?: Client
   __waStatus?: WAStatus
   __waQR?: string
+  __waLastError?: string
 }
 
-export function getWAState(): { status: WAStatus; qr?: string } {
+export function getWAState(): { status: WAStatus; qr?: string; error?: string } {
   return {
     status: g.__waStatus ?? 'idle',
     qr: g.__waQR,
+    error: g.__waLastError,
   }
 }
 
@@ -28,6 +30,7 @@ export async function initWAClient(): Promise<void> {
 
   g.__waStatus = 'loading'
   g.__waQR = undefined
+  g.__waLastError = undefined
 
   // Dynamic import keeps puppeteer out of the client bundle
   const { Client, LocalAuth } = await import('whatsapp-web.js')
@@ -60,18 +63,23 @@ export async function initWAClient(): Promise<void> {
   client.on('ready', () => {
     g.__waStatus = 'ready'
     g.__waQR = undefined
+    g.__waLastError = undefined
   })
 
-  client.on('disconnected', () => {
+  client.on('disconnected', (reason: string) => {
     g.__waStatus = 'disconnected'
     g.__waClient = undefined
     g.__waQR = undefined
+    g.__waLastError = reason
   })
 
   // Non-blocking — QR/ready events fire asynchronously
   client.initialize().catch((err: Error) => {
     console.error('[WA] init error', err.message)
     g.__waStatus = 'disconnected'
+    g.__waClient = undefined
+    g.__waQR = undefined
+    g.__waLastError = err.message
   })
 
   g.__waClient = client
@@ -88,4 +96,5 @@ export async function disconnectWA(): Promise<void> {
   }
   g.__waStatus = 'idle'
   g.__waQR = undefined
+  g.__waLastError = undefined
 }

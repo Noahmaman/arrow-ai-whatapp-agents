@@ -17,12 +17,17 @@ export async function GET() {
     } satisfies RemoteStatusResponse)
   }
 
-  const { status, qr } = getWAState()
+  const { status, qr, error } = getWAState()
 
   let qrImage: string | undefined
   if (qr) {
     qrImage = await QRCode.toDataURL(qr, { width: 280, margin: 2 })
   }
 
-  return NextResponse.json({ status, qrImage } satisfies RemoteStatusResponse)
+  return NextResponse.json({
+    status,
+    qrImage,
+    error,
+    details: error,
+  } satisfies RemoteStatusResponse)
 }

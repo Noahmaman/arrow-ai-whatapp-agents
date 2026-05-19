@@ -43,7 +43,7 @@ export default function ConnectPage() {
       setData(json)
       if (json.error) setActionError(json.details || json.error)
       // Stop polling once ready or disconnected (user can restart)
-      if (json.status === 'ready' || json.status === 'idle' || json.configured === false) {
+      if (json.status === 'ready' || json.status === 'idle' || json.status === 'disconnected' || json.configured === false) {
         if (intervalRef.current) clearInterval(intervalRef.current)
       }
     } catch {
