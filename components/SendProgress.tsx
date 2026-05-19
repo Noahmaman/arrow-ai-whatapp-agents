@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useRef, useState } from 'react'
+import { useRef, useState } from 'react'
 import { DEFAULT_DELIVERY_SETTINGS, type DeliverySettings, type SendResult } from '@/lib/types'
 
 type Props = {
@@ -38,7 +38,8 @@ export default function SendProgress({ results: initial, campaignMeta, deliveryS
   const [sent, setSent] = useState(0)
   const [failed, setFailed] = useState(0)
   const [currentIndex, setCurrentIndex] = useState(0)
-  const [running, setRunning] = useState(true)
+  const [started, setStarted] = useState(false)
+  const [running, setRunning] = useState(false)
   const [saved, setSaved] = useState(false)
   const [waitLabel, setWaitLabel] = useState('')
   // Rendered rows: only last VISIBLE_ROWS processed entries
@@ -83,71 +84,65 @@ export default function SendProgress({ results: initial, campaignMeta, deliveryS
     setVisibleRows([...tail])
   }
 
-  useEffect(() => {
-    let cancelled = false
+  const startSending = async () => {
+    if (started || running) return
+
+    setStarted(true)
+    setRunning(true)
+    stopRef.current = false
     let localSent = 0
     let localFailed = 0
 
-    const run = async () => {
-      for (let i = 0; i < total; i++) {
-        if (cancelled || stopRef.current) break
+    for (let i = 0; i < total; i++) {
+      if (stopRef.current) break
 
-        setCurrentIndex(i)
+      setCurrentIndex(i)
+      resultsRef.current[i] = { ...resultsRef.current[i], status: 'sending' }
+      flushVisible(i)
 
-        // Mark as sending in ref (no state clone)
-        resultsRef.current[i] = { ...resultsRef.current[i], status: 'sending' }
-        flushVisible(i)
-
-        try {
-          const res = await fetch('/api/whatsapp/send', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ phone: initial[i].phone, message: initial[i].message }),
-          })
-          const data = await res.json()
-          if (data.error) {
-            resultsRef.current[i] = { ...resultsRef.current[i], status: 'error', error: data.error }
-            localFailed++
-            setFailed(localFailed)
-          } else {
-            resultsRef.current[i] = { ...resultsRef.current[i], status: 'sent', messageId: data.messageId }
-            localSent++
-            setSent(localSent)
-          }
-        } catch (e) {
-          resultsRef.current[i] = { ...resultsRef.current[i], status: 'error', error: e instanceof Error ? e.message : 'Network error' }
+      try {
+        const res = await fetch('/api/whatsapp/send', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ phone: initial[i].phone, message: initial[i].message }),
+        })
+        const data = await res.json()
+        if (data.error) {
+          resultsRef.current[i] = { ...resultsRef.current[i], status: 'error', error: data.error }
           localFailed++
           setFailed(localFailed)
+        } else {
+          resultsRef.current[i] = { ...resultsRef.current[i], status: 'sent', messageId: data.messageId }
+          localSent++
+          setSent(localSent)
         }
-
-        flushVisible(i)
-
-        if (i < total - 1 && !cancelled && !stopRef.current) {
-          const sentInCurrentRun = localSent + localFailed
-          const cooldownAfter = Math.max(1, deliverySettings.cooldownAfterMessages)
-          const isCooldownTurn = sentInCurrentRun > 0 && sentInCurrentRun % cooldownAfter === 0
-          const delay = isCooldownTurn ? Math.max(1, deliverySettings.cooldownMinutes) * 60_000 : randomDelayMs(deliverySettings)
-          setWaitLabel(
-            isCooldownTurn
-              ? `Batch cooldown: waiting ${formatDuration(delay)} before the next send`
-              : `Random safety delay: next send in ${formatDuration(delay)}`
-          )
-          await new Promise((r) => setTimeout(r, delay))
-          setWaitLabel('')
-        }
+      } catch (e) {
+        resultsRef.current[i] = { ...resultsRef.current[i], status: 'error', error: e instanceof Error ? e.message : 'Network error' }
+        localFailed++
+        setFailed(localFailed)
       }
 
-      if (!cancelled) {
-        setRunning(false)
-        flushVisible(total - 1)
-        await saveCampaign()
+      flushVisible(i)
+
+      if (i < total - 1 && !stopRef.current) {
+        const sentInCurrentRun = localSent + localFailed
+        const cooldownAfter = Math.max(1, deliverySettings.cooldownAfterMessages)
+        const isCooldownTurn = sentInCurrentRun > 0 && sentInCurrentRun % cooldownAfter === 0
+        const delay = isCooldownTurn ? Math.max(1, deliverySettings.cooldownMinutes) * 60_000 : randomDelayMs(deliverySettings)
+        setWaitLabel(
+          isCooldownTurn
+            ? `Batch cooldown: waiting ${formatDuration(delay)} before the next send`
+            : `Random safety delay: next send in ${formatDuration(delay)}`
+        )
+        await new Promise((r) => setTimeout(r, delay))
+        setWaitLabel('')
       }
     }
 
-    run()
-    return () => { cancelled = true }
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [])
+    setRunning(false)
+    flushVisible(total - 1)
+    await saveCampaign()
+  }
 
   const StatusIcon = ({ status }: { status: SendResult['status'] }) => {
     if (status === 'sending') return (
@@ -178,10 +173,10 @@ export default function SendProgress({ results: initial, campaignMeta, deliveryS
         <div className="flex items-start justify-between mb-6">
           <div>
             <h2 className="text-xl font-semibold text-slate-800">
-              {running ? `Sending messages… (${currentIndex + 1} / ${total})` : 'Done!'}
+              {!started ? 'Ready to send' : running ? `Sending messages… (${currentIndex + 1} / ${total})` : 'Done!'}
             </h2>
             <p className="text-slate-500 text-sm mt-1">
-              {sent} sent · {failed} failed · {running ? `${remaining} remaining` : 'complete'}
+              {sent} sent · {failed} failed · {!started ? `${total} queued` : running ? `${remaining} remaining` : 'complete'}
             </p>
             {running && waitLabel && (
               <p className="text-xs text-amber-600 mt-1">{waitLabel}</p>
@@ -244,8 +239,21 @@ export default function SendProgress({ results: initial, campaignMeta, deliveryS
         </div>
 
         {/* Actions */}
+        {!started && (
+          <div className="mt-6 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800">
+            Nothing is sent automatically. Review the queue, then click Start sending once.
+          </div>
+        )}
+
         <div className="mt-6 flex gap-3 items-center">
-          {running ? (
+          {!started ? (
+            <button
+              onClick={startSending}
+              className="flex-1 py-2.5 bg-whatsapp-green hover:bg-whatsapp-teal text-white rounded-xl text-sm font-medium transition"
+            >
+              Start sending {total} message{total !== 1 ? 's' : ''}
+            </button>
+          ) : running ? (
             <button
               onClick={() => { stopRef.current = true; setRunning(false) }}
               className="px-5 py-2.5 rounded-xl border border-red-200 text-red-600 text-sm font-medium hover:bg-red-50 transition"
