@@ -2,8 +2,8 @@ import type { Metadata } from 'next'
 import './globals.css'
 
 export const metadata: Metadata = {
-  title: 'WhatsApp Sheet Automation',
-  description: 'Send personalised WhatsApp messages from Google Sheets',
+  title: 'Arrow Agents SDR',
+  description: 'SDR automation for WhatsApp, LinkedIn, and sheet-based outreach',
 }
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {

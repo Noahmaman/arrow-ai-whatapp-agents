@@ -1,6 +1,6 @@
-# WhatsApp Sheet Automation
+# Arrow Agents SDR
 
-Next.js app for building personalised WhatsApp campaigns from pasted Excel/Google Sheets rows.
+Next.js app for building SDR outreach campaigns from pasted Excel/Google Sheets rows.
 
 ## Why Vercel Needs `WHATSAPP_SERVICE_URL`
 

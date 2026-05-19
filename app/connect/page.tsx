@@ -106,7 +106,7 @@ export default function ConnectPage() {
             </svg>
           </div>
           <div>
-            <h1 className="text-lg font-semibold text-slate-800">WhatsApp Automation</h1>
+            <h1 className="text-lg font-semibold text-slate-800">Arrow Agents SDR</h1>
             <p className="text-xs text-slate-500">Connect your WhatsApp account</p>
           </div>
           <nav className="ml-auto flex items-center gap-4 text-sm">

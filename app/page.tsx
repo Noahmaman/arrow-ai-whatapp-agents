@@ -49,8 +49,8 @@ export default function HomePage() {
             </svg>
           </div>
           <div>
-            <h1 className="text-lg font-semibold text-slate-800">WhatsApp Sheet Automation</h1>
-            <p className="text-xs text-slate-500">Create and send personalised campaigns</p>
+            <h1 className="text-lg font-semibold text-slate-800">Arrow Agents SDR</h1>
+            <p className="text-xs text-slate-500">Automated SDR outreach from your contact sheets</p>
           </div>
           <nav className="ml-auto flex items-center gap-3 text-sm">
             <Link href="/linkedin" className="text-slate-500 hover:text-whatsapp-dark font-medium transition">

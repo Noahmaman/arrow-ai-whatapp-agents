@@ -47,7 +47,7 @@ export default function HistoryPage() {
             </svg>
           </div>
           <div>
-            <h1 className="text-lg font-semibold text-slate-800">Campaign History</h1>
+            <h1 className="text-lg font-semibold text-slate-800">Arrow Agents SDR History</h1>
             <p className="text-xs text-slate-500">{campaigns.length} campaign{campaigns.length !== 1 ? 's' : ''} saved</p>
           </div>
           <nav className="ml-auto flex gap-3">

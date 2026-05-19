@@ -48,7 +48,7 @@ export default function LinkedInPage() {
             in
           </div>
           <div>
-            <h1 className="text-lg font-semibold text-slate-800">LinkedIn Connection</h1>
+            <h1 className="text-lg font-semibold text-slate-800">Arrow Agents SDR</h1>
             <p className="text-xs text-slate-500">Connect your LinkedIn profile with official OAuth</p>
           </div>
           <nav className="ml-auto text-sm">
