@@ -27,6 +27,8 @@ ANTHROPIC_API_KEY=...
 GOOGLE_SERVICE_ACCOUNT_EMAIL=...
 GOOGLE_PRIVATE_KEY="-----BEGIN PRIVATE KEY-----\n...\n-----END PRIVATE KEY-----"
 WHATSAPP_SERVICE_URL=https://your-whatsapp-service.onrender.com
+LINKEDIN_CLIENT_ID=...
+LINKEDIN_CLIENT_SECRET=...
 ```
 
 ### 2. Deploy the WhatsApp service
@@ -55,6 +57,18 @@ It should return JSON with `ok: true`. If `status` becomes `disconnected`, the `
 ### 3. Connect WhatsApp
 
 Open `/connect` in the Vercel app, click connect, scan the QR code, then send campaigns.
+
+### 4. Connect LinkedIn
+
+Create a LinkedIn developer app and enable **Sign In with LinkedIn using OpenID Connect**.
+
+Add this redirect URL in the LinkedIn app:
+
+```bash
+https://your-vercel-domain.vercel.app/api/linkedin/callback
+```
+
+Then open `/linkedin` in the app and click **Connect LinkedIn**.
 
 ## Local Development
 

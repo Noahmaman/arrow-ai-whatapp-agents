@@ -53,6 +53,9 @@ export default function HomePage() {
             <p className="text-xs text-slate-500">Create and send personalised campaigns</p>
           </div>
           <nav className="ml-auto flex items-center gap-3 text-sm">
+            <Link href="/linkedin" className="text-slate-500 hover:text-whatsapp-dark font-medium transition">
+              LinkedIn
+            </Link>
             <Link href="/connect" className="text-slate-500 hover:text-whatsapp-dark font-medium transition">
               Connect
             </Link>
