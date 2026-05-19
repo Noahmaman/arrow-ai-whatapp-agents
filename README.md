@@ -33,27 +33,24 @@ WHATSAPP_SERVICE_URL=https://your-whatsapp-service.onrender.com
 
 Deploy the `whatsapp-service/` folder on a persistent Node host such as Render, Railway, Fly.io, or a VPS.
 
-For Render:
+For Render, use the included `render.yaml` blueprint or create the service manually:
 
 1. Create a new Web Service from this GitHub repo.
 2. Set the root directory to `whatsapp-service`.
-3. Build command:
-
-```bash
-npm install
-```
-
-4. Start command:
-
-```bash
-npm start
-```
-
-5. Copy the public URL and set it in Vercel:
+3. Runtime: Docker.
+4. Copy the public URL and set it in Vercel:
 
 ```bash
 WHATSAPP_SERVICE_URL=https://your-render-service.onrender.com
 ```
+
+Check the service before connecting:
+
+```bash
+curl https://your-render-service.onrender.com/health
+```
+
+It should return JSON with `ok: true`. If `status` becomes `disconnected`, the `lastError` field explains why Chromium or WhatsApp failed.
 
 ### 3. Connect WhatsApp
 

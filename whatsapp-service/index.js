@@ -12,9 +12,10 @@ app.use(express.json({ limit: '10mb' }))
 let client
 let status = 'idle'
 let qr
+let lastError
 
 function getState() {
-  return { status, qr }
+  return { status, qr, lastError }
 }
 
 async function destroyClient() {
@@ -35,11 +36,13 @@ async function initClient() {
   await destroyClient()
   status = 'loading'
   qr = undefined
+  lastError = undefined
 
   client = new Client({
     authStrategy: new LocalAuth({ dataPath: './.wa-session' }),
     puppeteer: {
       headless: true,
+      executablePath: process.env.PUPPETEER_EXECUTABLE_PATH,
       args: [
         '--no-sandbox',
         '--disable-setuid-sandbox',
@@ -64,12 +67,14 @@ async function initClient() {
   client.on('ready', () => {
     qr = undefined
     status = 'ready'
+    lastError = undefined
   })
 
-  client.on('disconnected', () => {
+  client.on('disconnected', (reason) => {
     client = undefined
     qr = undefined
     status = 'disconnected'
+    lastError = reason ? String(reason) : undefined
   })
 
   client.initialize().catch((error) => {
@@ -77,11 +82,16 @@ async function initClient() {
     client = undefined
     qr = undefined
     status = 'disconnected'
+    lastError = error instanceof Error ? error.message : String(error)
   })
 }
 
+app.get('/', (_req, res) => {
+  res.json({ ok: true, service: 'arrow-whatsapp-service', status, lastError })
+})
+
 app.get('/health', (_req, res) => {
-  res.json({ ok: true, status })
+  res.json({ ok: true, status, lastError })
 })
 
 app.post('/init', async (_req, res) => {
@@ -99,7 +109,7 @@ app.post('/disconnect', async (_req, res) => {
 app.get('/status', async (_req, res) => {
   const state = getState()
   const qrImage = state.qr ? await QRCode.toDataURL(state.qr, { width: 280, margin: 2 }) : undefined
-  res.json({ status: state.status, qrImage })
+  res.json({ status: state.status, qrImage, error: state.lastError })
 })
 
 app.post('/validate', async (req, res) => {

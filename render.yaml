@@ -1,9 +1,7 @@
 services:
   - type: web
     name: arrow-whatsapp-service
-    env: node
+    env: docker
     rootDir: whatsapp-service
-    buildCommand: npm install
-    startCommand: npm start
     plan: starter
     autoDeploy: true
