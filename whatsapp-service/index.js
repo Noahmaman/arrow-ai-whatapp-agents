@@ -1,5 +1,6 @@
 import cors from 'cors'
 import express from 'express'
+import fs from 'fs/promises'
 import QRCode from 'qrcode'
 import whatsappWeb from 'whatsapp-web.js'
 
@@ -15,6 +16,7 @@ let client
 let status = 'idle'
 let qr
 let lastError
+const sessionPath = './.wa-session'
 
 function getState() {
   return { status, qr, lastError }
@@ -28,6 +30,18 @@ async function destroyClient() {
     // Ignore cleanup failures; the next init will create a fresh session.
   }
   client = undefined
+}
+
+async function resetSession() {
+  await destroyClient()
+  try {
+    await fs.rm(sessionPath, { recursive: true, force: true })
+  } catch {
+    // Ignore cleanup failures; startup errors will still surface through /status.
+  }
+  status = 'idle'
+  qr = undefined
+  lastError = undefined
 }
 
 async function initClient() {
@@ -105,6 +119,12 @@ app.post('/disconnect', async (_req, res) => {
   await destroyClient()
   status = 'idle'
   qr = undefined
+  lastError = undefined
+  res.json({ ok: true })
+})
+
+app.post('/reset', async (_req, res) => {
+  await resetSession()
   res.json({ ok: true })
 })
 
