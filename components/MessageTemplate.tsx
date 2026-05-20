@@ -18,6 +18,38 @@ type Props = {
   onBack: () => void
 }
 
+const templatePresets = [
+  {
+    name: 'Warm intro',
+    description: 'Short, personal, low pressure',
+    body: ({ name, company, role }: Record<string, string>) => `Hi {{${name}}}, I saw you${role ? ` work around {{${role}}}` : ''}${company ? ` at {{${company}}}` : ''}.\n\nQuick thought: we help teams find and contact qualified leads faster without spending hours cleaning sheets or writing every message manually.\n\nWould it be crazy to send you a 30-second overview?`,
+  },
+  {
+    name: 'Pain opener',
+    description: 'Lead gen / ops angle',
+    body: ({ name, company }: Record<string, string>) => `Hi {{${name}}}, quick one.\n\nA lot of teams${company ? ` like {{${company}}}` : ''} lose time between finding prospects, personalising outreach, and following up consistently.\n\nWe built Arrow Agents SDR to turn a contact sheet into personalised outreach with safer pacing and tracking.\n\nOpen to seeing how it would look on your workflow?`,
+  },
+  {
+    name: 'Event invite',
+    description: 'Webinar or demo link ready',
+    body: ({ name, company }: Record<string, string>) => `Hi {{${name}}}, I wanted to invite you personally${company ? ` since {{${company}}} looks like a relevant fit` : ''}.\n\nWe are showing how SDR teams can automate personalised outreach from sheets while keeping messages natural and spaced out.\n\nIf useful, here is the link: `,
+  },
+  {
+    name: 'Follow-up',
+    description: 'Polite nudge',
+    body: ({ name }: Record<string, string>) => `Hi {{${name}}}, just following up on my previous note.\n\nNo worries if the timing is off. I thought it could be relevant because it helps teams move from raw contact lists to personalised outreach without doing everything manually.\n\nWorth a quick look?`,
+  },
+  {
+    name: 'Direct offer',
+    description: 'Clear SDR value prop',
+    body: ({ name, company }: Record<string, string>) => `Hi {{${name}}}, I can help${company ? ` {{${company}}}` : ' your team'} turn lead sheets into personalised WhatsApp outreach with random sending delays, previews, and campaign history.\n\nIf I prepared a small example using your current columns, would you want to see it?`,
+  },
+]
+
+function findHeader(headers: string[], patterns: RegExp[], fallback: string) {
+  return headers.find((header) => patterns.some((pattern) => pattern.test(header))) || headers[0] || fallback
+}
+
 export default function MessageTemplate({ headers, rows, onNext, onBack }: Props) {
   const [tab, setTab] = useState<'manual' | 'ai'>('manual')
   const [template, setTemplate] = useState('')
@@ -37,6 +69,18 @@ export default function MessageTemplate({ headers, rows, onNext, onBack }: Props
     const tag = `{{${col}}}`
     setTemplate(template.slice(0, s) + tag + template.slice(ta.selectionEnd))
     setTimeout(() => { ta.focus(); ta.setSelectionRange(s + tag.length, s + tag.length) }, 0)
+  }
+
+  const applyPreset = (body: (vars: Record<string, string>) => string) => {
+    const vars = {
+      name: findHeader(headers, [/^name$/i, /first/i, /prenom/i, /prénom/i, /nom/i], 'Name'),
+      company: findHeader(headers, [/company/i, /societe/i, /société/i, /business/i, /account/i], ''),
+      role: findHeader(headers, [/role/i, /title/i, /job/i, /poste/i, /function/i], ''),
+    }
+    setTab('manual')
+    setTemplate(body(vars))
+    setError('')
+    setTimeout(() => textareaRef.current?.focus(), 0)
   }
 
   const previewManual = (tpl: string) =>
@@ -95,6 +139,22 @@ export default function MessageTemplate({ headers, rows, onNext, onBack }: Props
 
         {tab === 'manual' && (
           <div className="space-y-4">
+            <div>
+              <p className="text-xs font-semibold text-slate-500 uppercase tracking-wide mb-2">Ready-to-use SDR templates</p>
+              <div className="grid gap-2 sm:grid-cols-2">
+                {templatePresets.map((preset) => (
+                  <button
+                    key={preset.name}
+                    onClick={() => applyPreset(preset.body)}
+                    className="rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-left transition hover:border-whatsapp-green/40 hover:bg-whatsapp-light/30"
+                  >
+                    <span className="block text-sm font-semibold text-slate-800">{preset.name}</span>
+                    <span className="block text-xs text-slate-500 mt-0.5">{preset.description}</span>
+                  </button>
+                ))}
+              </div>
+            </div>
+
             <div>
               <p className="text-xs font-semibold text-slate-500 uppercase tracking-wide mb-2">Insert variable</p>
               <div className="flex flex-wrap gap-2">

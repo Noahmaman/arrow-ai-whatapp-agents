@@ -17,8 +17,8 @@ export type DeliverySettings = {
 }
 
 export const DEFAULT_DELIVERY_SETTINGS: DeliverySettings = {
-  minDelaySeconds: 35,
-  maxDelaySeconds: 90,
-  cooldownAfterMessages: 20,
-  cooldownMinutes: 5,
+  minDelaySeconds: 75,
+  maxDelaySeconds: 180,
+  cooldownAfterMessages: 10,
+  cooldownMinutes: 8,
 }
