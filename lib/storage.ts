@@ -17,7 +17,7 @@ export type Campaign = {
   id: string
   name: string
   createdAt: string
-  mode: 'manual' | 'ai'
+  mode: 'manual' | 'ai' | 'arrow'
   template?: string
   aiPrompt?: string
   demioLink?: string

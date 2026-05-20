@@ -5,7 +5,7 @@ import { DEFAULT_DELIVERY_SETTINGS, type DeliverySettings, type SendResult } fro
 
 type Props = {
   results: SendResult[]
-  campaignMeta: { mode: 'manual' | 'ai'; template?: string; aiPrompt?: string; demioLink?: string }
+  campaignMeta: { mode: 'manual' | 'ai' | 'arrow'; template?: string; aiPrompt?: string; demioLink?: string }
   deliverySettings?: DeliverySettings
   onReset: () => void
 }

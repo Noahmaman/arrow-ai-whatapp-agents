@@ -6,6 +6,41 @@ type ValidationResult = {
   phone: string
   exists: boolean
   chatId?: string
+  normalizedPhone?: string
+}
+
+function getPhoneCandidates(value: unknown) {
+  const raw = String(value ?? '').trim()
+  const digits = raw.replace(/\D/g, '')
+  const candidates: string[] = []
+
+  const add = (candidate: string) => {
+    const clean = candidate.replace(/\D/g, '')
+    if (clean.length >= 8 && clean.length <= 15 && !candidates.includes(clean)) {
+      candidates.push(clean)
+    }
+  }
+
+  if (!digits) return candidates
+
+  if (raw.startsWith('+')) add(digits)
+  if (digits.startsWith('00')) add(digits.slice(2))
+
+  add(digits)
+
+  if (digits.startsWith('330')) add(`33${digits.slice(3)}`)
+  if (digits.startsWith('9720')) add(`972${digits.slice(4)}`)
+
+  if (digits.startsWith('0')) {
+    add(`33${digits.slice(1)}`)
+    add(`972${digits.slice(1)}`)
+  }
+
+  if (digits.length === 9 && /^[67]/.test(digits)) add(`33${digits}`)
+  if (digits.length === 9 && digits.startsWith('5')) add(`972${digits}`)
+  if (digits.length === 10 && /^[2-9]/.test(digits)) add(`1${digits}`)
+
+  return candidates
 }
 
 export async function POST(request: NextRequest) {
@@ -39,23 +74,35 @@ export async function POST(request: NextRequest) {
 
     for (const rawPhone of phones) {
       const phone = String(rawPhone ?? '')
-      const digits = phone.replace(/\D/g, '')
+      const candidates = getPhoneCandidates(phone)
 
-      if (!digits) {
+      if (!candidates.length) {
         results.push({ phone, exists: false })
         continue
       }
 
-      try {
-        const lookup = await client.getNumberId(`${digits}@c.us`)
-        results.push({
-          phone,
-          exists: Boolean(lookup?._serialized),
-          chatId: lookup?._serialized,
-        })
-      } catch {
-        results.push({ phone, exists: false })
+      let found: Awaited<ReturnType<typeof client.getNumberId>> = null
+      let normalizedPhone: string | undefined
+
+      for (const candidate of candidates) {
+        try {
+          const lookup = await client.getNumberId(candidate)
+          if (lookup?._serialized) {
+            found = lookup
+            normalizedPhone = candidate
+            break
+          }
+        } catch {
+          // Try the next likely country-code format.
+        }
       }
+
+      results.push({
+        phone,
+        exists: Boolean(found?._serialized),
+        chatId: found?._serialized,
+        normalizedPhone,
+      })
     }
 
     return NextResponse.json({ success: true, results })

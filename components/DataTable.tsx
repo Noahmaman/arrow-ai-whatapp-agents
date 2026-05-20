@@ -1,6 +1,6 @@
 'use client'
 
-import { useCallback, useEffect, useRef, useState } from 'react'
+import { type ChangeEvent, useCallback, useEffect, useRef, useState } from 'react'
 import type { SheetRow } from '@/lib/types'
 
 type Props = {
@@ -14,7 +14,17 @@ function makeEmpty(cols: string[], numRows: number): string[][] {
   return Array.from({ length: numRows }, () => Array(cols.length).fill(''))
 }
 
-function parseClipboardTable(text: string): string[][] {
+function detectDelimiter(text: string) {
+  const firstLine = text.split(/\r?\n/).find((line) => line.trim()) || ''
+  const counts = [
+    { delimiter: '\t', count: (firstLine.match(/\t/g) || []).length },
+    { delimiter: ',', count: (firstLine.match(/,/g) || []).length },
+    { delimiter: ';', count: (firstLine.match(/;/g) || []).length },
+  ]
+  return counts.sort((a, b) => b.count - a.count)[0]?.delimiter || '\t'
+}
+
+function parseDelimitedTable(text: string, delimiter = detectDelimiter(text)): string[][] {
   const rows: string[][] = []
   let row: string[] = []
   let cell = ''
@@ -34,7 +44,7 @@ function parseClipboardTable(text: string): string[][] {
       continue
     }
 
-    if (!inQuotes && char === '\t') {
+    if (!inQuotes && char === delimiter) {
       row.push(cell)
       cell = ''
       continue
@@ -58,6 +68,16 @@ function parseClipboardTable(text: string): string[][] {
   return rows
     .map((r) => r.map((c) => c.trim()))
     .filter((r) => r.some((c) => c.length > 0))
+}
+
+function rowsToSheet(headers: string[], dataRows: string[][]): SheetRow[] {
+  return dataRows.map((r) => {
+    const obj: SheetRow = {}
+    headers.forEach((h, i) => {
+      obj[h] = r[i] ?? ''
+    })
+    return obj
+  })
 }
 
 function isPhoneLike(value: string) {
@@ -99,12 +119,22 @@ export default function DataTable({ onLoaded }: Props) {
   const tableRef = useRef<HTMLDivElement>(null)
   const [focusedCell, setFocusedCell] = useState<[number, number] | null>(null)
 
+  const loadParsedRows = useCallback((parsed: string[], dataRows: string[][]) => {
+    const colCount = Math.max(parsed.length, ...dataRows.map((r) => r.length), DEFAULT_COLS.length)
+    const nextHeaders = normaliseHeaders(parsed, colCount)
+    const paddedRows = dataRows.map((r) => [...r, ...Array(Math.max(0, colCount - r.length)).fill('')].slice(0, colCount))
+    const phoneIdx = nextHeaders.findIndex((h) => /phone|mobile|tel|whatsapp|número|numero/i.test(h))
+    const fallbackPhoneIdx = paddedRows[0]?.findIndex(isPhoneLike) ?? -1
+    const selectedPhoneIdx = phoneIdx >= 0 ? phoneIdx : fallbackPhoneIdx >= 0 ? fallbackPhoneIdx : 0
+    onLoaded(nextHeaders, rowsToSheet(nextHeaders, paddedRows), nextHeaders[selectedPhoneIdx])
+  }, [onLoaded])
+
   const handlePaste = useCallback((e: ClipboardEvent) => {
     const text = e.clipboardData?.getData('text')
     if (!text) return
     e.preventDefault()
 
-    const parsed = parseClipboardTable(text)
+    const parsed = parseDelimitedTable(text)
     if (parsed.length === 0) return
 
     const firstRow = parsed[0]
@@ -130,6 +160,60 @@ export default function DataTable({ onLoaded }: Props) {
     const dataPhoneIdx = paddedRows[0]?.findIndex(isPhoneLike) ?? -1
     setPhoneCol(headerPhoneIdx >= 0 ? headerPhoneIdx : dataPhoneIdx >= 0 ? dataPhoneIdx : 0)
   }, [headers])
+
+  const handleCsvFile = async (event: ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0]
+    if (!file) return
+
+    setError('')
+    try {
+      const text = await file.text()
+      const parsed = parseDelimitedTable(text)
+      if (parsed.length < 2) {
+        setError('This CSV needs a header row and at least one contact.')
+        return
+      }
+
+      const nextHeaders = parsed[0]
+      const dataRows = parsed.slice(1).filter((r) => r.some((c) => c.trim()))
+      if (!dataRows.length) {
+        setError('No contacts found in this CSV.')
+        return
+      }
+
+      loadParsedRows(nextHeaders, dataRows)
+    } catch {
+      setError('Unable to read this CSV file.')
+    } finally {
+      event.target.value = ''
+    }
+  }
+
+  const loadLocalArrowCsv = async () => {
+    setError('')
+    try {
+      const res = await fetch('/api/local-csv')
+      const text = await res.text()
+      if (!res.ok) {
+        try {
+          const json = JSON.parse(text)
+          throw new Error(json.error)
+        } catch {
+          throw new Error('Unable to load ARROW SALES P CSV.')
+        }
+      }
+
+      const parsed = parseDelimitedTable(text)
+      if (parsed.length < 2) {
+        setError('The local ARROW SALES P CSV needs a header row and at least one contact.')
+        return
+      }
+
+      loadParsedRows(parsed[0], parsed.slice(1).filter((r) => r.some((c) => c.trim())))
+    } catch (error) {
+      setError(error instanceof Error ? error.message : 'Unable to load ARROW SALES P CSV.')
+    }
+  }
 
   useEffect(() => {
     const el = tableRef.current
@@ -205,6 +289,29 @@ export default function DataTable({ onLoaded }: Props) {
             <span className="font-medium text-whatsapp-dark">copy cells from Google Sheets / Excel and paste here</span>{' '}
             — it auto-fills the table.
           </p>
+        </div>
+
+        <div className="mb-4 grid gap-3 sm:grid-cols-2">
+          <button
+            type="button"
+            onClick={loadLocalArrowCsv}
+            className="flex items-center justify-between gap-3 rounded-xl border border-whatsapp-green/30 bg-whatsapp-light/30 px-4 py-3 text-left text-sm transition hover:bg-whatsapp-light/60"
+          >
+            <span>
+              <span className="block font-semibold text-whatsapp-dark">Load ARROW SALES P</span>
+              <span className="block text-xs text-slate-500">Uses the CSV already in this project folder.</span>
+            </span>
+            <span className="rounded-lg bg-whatsapp-green px-3 py-2 text-xs font-semibold text-white">Load</span>
+          </button>
+
+          <label className="flex cursor-pointer items-center justify-between gap-3 rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm transition hover:bg-slate-100">
+          <span>
+            <span className="block font-semibold text-slate-700">Import another CSV</span>
+            <span className="block text-xs text-slate-500">Best for big lists like ARROW SALES P. It loads the file directly into the campaign flow.</span>
+          </span>
+          <span className="rounded-lg bg-slate-800 px-3 py-2 text-xs font-semibold text-white">Choose</span>
+          <input type="file" accept=".csv,text/csv" onChange={handleCsvFile} className="sr-only" />
+          </label>
         </div>
 
         {/* Paste hint */}

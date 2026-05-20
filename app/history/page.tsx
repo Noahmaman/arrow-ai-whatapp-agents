@@ -106,6 +106,9 @@ export default function HistoryPage() {
                         {c.mode === 'ai' && (
                           <span className="text-xs bg-slate-100 text-slate-600 px-2 py-0.5 rounded-full">✨ AI</span>
                         )}
+                        {c.mode === 'arrow' && (
+                          <span className="text-xs bg-green-50 text-green-700 px-2 py-0.5 rounded-full">Arrow personalized</span>
+                        )}
                         {c.demioLink && (
                           <span className="text-xs bg-blue-50 text-blue-600 px-2 py-0.5 rounded-full">🎥 Demio</span>
                         )}

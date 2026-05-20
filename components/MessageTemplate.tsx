@@ -4,7 +4,7 @@ import { useRef, useState } from 'react'
 import type { SheetRow } from '@/lib/types'
 
 export type TemplateOutput = {
-  mode: 'manual' | 'ai'
+  mode: 'manual' | 'ai' | 'arrow'
   template?: string
   messages?: string[]
   demioLink?: string
@@ -50,8 +50,56 @@ function findHeader(headers: string[], patterns: RegExp[], fallback: string) {
   return headers.find((header) => patterns.some((pattern) => pattern.test(header))) || headers[0] || fallback
 }
 
+function firstValue(row: SheetRow, keys: string[]) {
+  const entries = Object.entries(row)
+  for (const key of keys) {
+    const found = entries.find(([header]) => header.toLowerCase().trim() === key.toLowerCase())
+    const value = found?.[1]?.trim()
+    if (value) return value
+  }
+  for (const key of keys) {
+    const found = entries.find(([header]) => header.toLowerCase().includes(key.toLowerCase()))
+    const value = found?.[1]?.trim()
+    if (value) return value
+  }
+  return ''
+}
+
+function cleanCategory(value: string) {
+  return value.replace(/\s+/g, ' ').trim()
+}
+
+function makeArrowMessage(row: SheetRow) {
+  const company = firstValue(row, ['Name', 'Company', 'Business', 'Business Name']) || 'your business'
+  const city = firstValue(row, ['City', 'Municipality'])
+  const category = cleanCategory(firstValue(row, ['First_category', 'Second_category', 'Keyword']))
+  const rating = firstValue(row, ['Average_rating'])
+  const reviews = firstValue(row, ['Reviews_count'])
+  const website = firstValue(row, ['Website', 'Domain'])
+
+  const details: string[] = []
+  if (category) details.push(`in ${category}`)
+  if (city) details.push(`around ${city}`)
+  if (rating && reviews) details.push(`with ${rating}/5 across ${reviews} reviews`)
+  else if (rating) details.push(`with a ${rating}/5 rating`)
+  else if (reviews) details.push(`with ${reviews} reviews`)
+  if (website && website !== ' ') details.push(`and your online presence`)
+
+  const context = details.length
+    ? `Came across ${company} ${details.join(', ')} and genuinely thought what you’re building was interesting, so I wanted to reach out.`
+    : `Came across ${company} and genuinely thought what you’re building was interesting, so I wanted to reach out.`
+
+  return `Hey, hope you are doing good :)
+
+I’m Noah from Arrow AI. We help businesses transition into the AI era by building custom AI systems and improving how they appear across platforms like ChatGPT and Gemini.
+
+${context}
+
+Waiting for your thoughts! Have a great day!`
+}
+
 export default function MessageTemplate({ headers, rows, onNext, onBack }: Props) {
-  const [tab, setTab] = useState<'manual' | 'ai'>('manual')
+  const [tab, setTab] = useState<'manual' | 'ai' | 'arrow'>('arrow')
   const [template, setTemplate] = useState('')
   const textareaRef = useRef<HTMLTextAreaElement>(null)
   const [aiPrompt, setAiPrompt] = useState('')
@@ -111,7 +159,14 @@ export default function MessageTemplate({ headers, rows, onNext, onBack }: Props
 
   const handleNext = () => {
     setError('')
-    if (tab === 'manual') {
+    if (tab === 'arrow') {
+      onNext({
+        mode: 'arrow',
+        messages: rows.map(makeArrowMessage),
+        aiPrompt: 'Arrow AI deterministic personalised CSV outreach',
+        demioLink: demioLink.trim() || undefined,
+      })
+    } else if (tab === 'manual') {
       if (!template.trim()) { setError('Write a message template first.'); return }
       onNext({ mode: 'manual', template, demioLink: demioLink.trim() || undefined })
     } else {
@@ -129,13 +184,31 @@ export default function MessageTemplate({ headers, rows, onNext, onBack }: Props
         </div>
 
         <div className="flex gap-1 p-1 bg-slate-100 rounded-xl mb-6">
-          {(['manual', 'ai'] as const).map((t) => (
+          {(['arrow', 'manual', 'ai'] as const).map((t) => (
             <button key={t} onClick={() => { setTab(t); setError('') }}
               className={`flex-1 py-2 px-4 rounded-lg text-sm font-medium transition ${tab === t ? 'bg-white shadow-sm text-slate-800' : 'text-slate-500 hover:text-slate-700'}`}>
-              {t === 'manual' ? '✏️  Write template' : '✨  AI writes for me'}
+              {t === 'arrow' ? 'Arrow personalized' : t === 'manual' ? 'Write template' : 'AI writes for me'}
             </button>
           ))}
         </div>
+
+        {tab === 'arrow' && (
+          <div className="space-y-4">
+            <div className="rounded-xl border border-whatsapp-green/30 bg-whatsapp-light/30 p-4">
+              <h3 className="text-sm font-semibold text-whatsapp-dark">Ready for your CSV</h3>
+              <p className="mt-1 text-sm text-slate-600">
+                Each contact gets the Arrow AI message personalised with business name, city, category, reviews, rating, and website data when available.
+              </p>
+            </div>
+
+            <div>
+              <p className="text-xs font-semibold text-slate-500 uppercase tracking-wide mb-2">Preview from first contact</p>
+              <div className="bg-whatsapp-light rounded-2xl rounded-tl-none px-4 py-3 text-sm text-slate-800 whitespace-pre-wrap border border-whatsapp-green/20">
+                {rows[0] ? makeArrowMessage(rows[0]) : 'No contact loaded yet.'}
+              </div>
+            </div>
+          </div>
+        )}
 
         {tab === 'manual' && (
           <div className="space-y-4">

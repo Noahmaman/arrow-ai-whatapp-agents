@@ -18,6 +18,40 @@ let qr
 let lastError
 const sessionPath = './.wa-session'
 
+function getPhoneCandidates(value) {
+  const raw = String(value ?? '').trim()
+  const digits = raw.replace(/\D/g, '')
+  const candidates = []
+
+  const add = (candidate) => {
+    const clean = candidate.replace(/\D/g, '')
+    if (clean.length >= 8 && clean.length <= 15 && !candidates.includes(clean)) {
+      candidates.push(clean)
+    }
+  }
+
+  if (!digits) return candidates
+
+  if (raw.startsWith('+')) add(digits)
+  if (digits.startsWith('00')) add(digits.slice(2))
+
+  add(digits)
+
+  if (digits.startsWith('330')) add(`33${digits.slice(3)}`)
+  if (digits.startsWith('9720')) add(`972${digits.slice(4)}`)
+
+  if (digits.startsWith('0')) {
+    add(`33${digits.slice(1)}`)
+    add(`972${digits.slice(1)}`)
+  }
+
+  if (digits.length === 9 && /^[67]/.test(digits)) add(`33${digits}`)
+  if (digits.length === 9 && digits.startsWith('5')) add(`972${digits}`)
+  if (digits.length === 10 && /^[2-9]/.test(digits)) add(`1${digits}`)
+
+  return candidates
+}
+
 function getState() {
   return { status, qr, lastError }
 }
@@ -145,23 +179,35 @@ app.post('/validate', async (req, res) => {
 
   for (const rawPhone of phones) {
     const phone = String(rawPhone ?? '')
-    const digits = phone.replace(/\D/g, '')
+    const candidates = getPhoneCandidates(phone)
 
-    if (!digits) {
+    if (!candidates.length) {
       results.push({ phone, exists: false })
       continue
     }
 
-    try {
-      const lookup = await client.getNumberId(`${digits}@c.us`)
-      results.push({
-        phone,
-        exists: Boolean(lookup?._serialized),
-        chatId: lookup?._serialized,
-      })
-    } catch {
-      results.push({ phone, exists: false })
+    let found
+    let normalizedPhone
+
+    for (const candidate of candidates) {
+      try {
+        const lookup = await client.getNumberId(candidate)
+        if (lookup?._serialized) {
+          found = lookup
+          normalizedPhone = candidate
+          break
+        }
+      } catch {
+        // Try the next likely country-code format.
+      }
     }
+
+    results.push({
+      phone,
+      exists: Boolean(found?._serialized),
+      chatId: found?._serialized,
+      normalizedPhone,
+    })
   }
 
   res.json({ success: true, results })
@@ -173,16 +219,31 @@ app.post('/send', async (req, res) => {
     return
   }
 
-  const digits = String(req.body?.phone ?? '').replace(/\D/g, '')
+  const candidates = getPhoneCandidates(req.body?.phone)
   const message = String(req.body?.message ?? '')
 
-  if (!digits || !message.trim()) {
+  if (!candidates.length || !message.trim()) {
     res.status(400).json({ error: 'Phone and message are required.' })
     return
   }
 
   try {
-    const result = await client.sendMessage(`${digits}@c.us`, message)
+    let chatId
+
+    for (const candidate of candidates) {
+      const lookup = await client.getNumberId(candidate)
+      if (lookup?._serialized) {
+        chatId = lookup._serialized
+        break
+      }
+    }
+
+    if (!chatId) {
+      res.status(404).json({ error: 'Phone number is not registered on WhatsApp' })
+      return
+    }
+
+    const result = await client.sendMessage(chatId, message)
     res.json({ success: true, messageId: result.id.id })
   } catch (error) {
     res.status(500).json({ error: error instanceof Error ? error.message : 'Unable to send message' })

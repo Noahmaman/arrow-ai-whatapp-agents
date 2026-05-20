@@ -2,6 +2,40 @@ import { NextRequest, NextResponse } from 'next/server'
 import { getWAClient, getWAState } from '@/lib/whatsapp-client'
 import { callWhatsAppService, hasRemoteWhatsAppService, isVercelRuntime, vercelWhatsAppUnavailable } from '@/lib/whatsapp-service'
 
+function getPhoneCandidates(value: unknown) {
+  const raw = String(value ?? '').trim()
+  const digits = raw.replace(/\D/g, '')
+  const candidates: string[] = []
+
+  const add = (candidate: string) => {
+    const clean = candidate.replace(/\D/g, '')
+    if (clean.length >= 8 && clean.length <= 15 && !candidates.includes(clean)) {
+      candidates.push(clean)
+    }
+  }
+
+  if (!digits) return candidates
+
+  if (raw.startsWith('+')) add(digits)
+  if (digits.startsWith('00')) add(digits.slice(2))
+
+  add(digits)
+
+  if (digits.startsWith('330')) add(`33${digits.slice(3)}`)
+  if (digits.startsWith('9720')) add(`972${digits.slice(4)}`)
+
+  if (digits.startsWith('0')) {
+    add(`33${digits.slice(1)}`)
+    add(`972${digits.slice(1)}`)
+  }
+
+  if (digits.length === 9 && /^[67]/.test(digits)) add(`33${digits}`)
+  if (digits.length === 9 && digits.startsWith('5')) add(`972${digits}`)
+  if (digits.length === 10 && /^[2-9]/.test(digits)) add(`1${digits}`)
+
+  return candidates
+}
+
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json()
@@ -29,9 +63,24 @@ export async function POST(request: NextRequest) {
 
     const { phone, message } = body
 
-    // Normalise: strip non-digits then append @c.us
-    const digits = String(phone).replace(/\D/g, '')
-    const chatId = `${digits}@c.us`
+    if (!String(message ?? '').trim()) {
+      return NextResponse.json({ error: 'Message is required' }, { status: 400 })
+    }
+
+    const candidates = getPhoneCandidates(phone)
+    let chatId: string | undefined
+
+    for (const candidate of candidates) {
+      const lookup = await client.getNumberId(candidate)
+      if (lookup?._serialized) {
+        chatId = lookup._serialized
+        break
+      }
+    }
+
+    if (!chatId) {
+      return NextResponse.json({ error: 'Phone number is not registered on WhatsApp' }, { status: 404 })
+    }
 
     const result = await client.sendMessage(chatId, message)
 
